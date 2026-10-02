@@ -361,7 +361,7 @@ export const register: Register = on => {
 
     const gap = <Box height={1} />
     return (
-      <Box flexDirection="column" width="100%" paddingX={1} paddingTop={1}>
+      <Box flexDirection="column" width="100%" minHeight={e.props.scroll?.bodyRows} paddingX={1} paddingTop={1}>
         <Title label="Context" right={ctxPctText} el={el} />
         <Bar ratio={contextBarRatio} color={C.accent} width={barW} surface={e.surface} el={el} />
         <Text color={C.muted}>{contextLine} tokens</Text>
@@ -381,6 +381,7 @@ export const register: Register = on => {
         <Title label="Cache" el={el} />
         <Row label="Hit rate" value={rateText} el={el} color={C.accent} />
         <Bar ratio={rate ?? 0} color={C.accent} width={barW} surface={e.surface} el={el} />
+        {gap}
         <Box flexDirection="row" justifyContent="space-between" width="100%">
           <Text color={C.muted}>Expires in</Text>
           <Text>
@@ -396,22 +397,27 @@ export const register: Register = on => {
         <Row label="Output" value={speedText} el={el} />
         {gap}
 
-        <Title label={workspaceName} right={git?.branch ?? undefined} el={el} />
+        <Title label="Workspace" el={el} />
+        <Row label="Folder" value={workspaceName} el={el} />
         {git ? (
-          <Box flexDirection="row" justifyContent="space-between" width="100%">
-            <Text color={git.dirty ? C.warn : C.ok}>
-              {git.dirty ? `${git.changed} changed` : 'Clean'}
-            </Text>
-            <Text>
-              <Text color={C.ok}>+{compact(git.added)}</Text>
-              <Text color={C.muted}> </Text>
-              <Text color={C.bad}>−{compact(git.removed)}</Text>
-            </Text>
+          <Box flexDirection="column" width="100%">
+            <Row label="Branch" value={git.branch ?? 'detached'} el={el} />
+            <Row label="Status" value={git.dirty ? `${git.changed} changed` : 'Clean'} el={el} color={git.dirty ? C.warn : C.ok} />
+            <Box flexDirection="row" justifyContent="space-between" width="100%">
+              <Text color={C.muted}>Lines</Text>
+              <Text>
+                <Text color={C.ok}>+{compact(git.added)}</Text>
+                <Text color={C.muted}> </Text>
+                <Text color={C.bad}>−{compact(git.removed)}</Text>
+              </Text>
+            </Box>
           </Box>
         ) : (
-          <Text color={C.muted}>Not a git repository</Text>
+          <Row label="Git" value="Not a repository" el={el} dim />
         )}
-        {gap}
+
+        {/* Spacer: the pane's body is bodyRows tall, so the toggle sits at its foot. */}
+        <Box flexGrow={1} minHeight={1} />
         <els.Button key="toggle" label="Hide sidebar  ctrl+x s" plain dimColor action={TOGGLE_ACTION} onPress={() => toggle($)} />
       </Box>
     )

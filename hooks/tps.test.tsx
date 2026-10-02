@@ -68,7 +68,7 @@ describe('register', () => {
     while (!step.done) step = await stream.next()
     await stream.result
 
-    const probes = [/^Context$/, /31\.4%/, /85\.4k/, /^Tokens$/, /Cache read/, /^Cache$/, /Expires in/, /[45]:[0-5][0-9]/, /^Speed$/, /First token/, /tok\/s/, /tps-meter/]
+    const probes = [/^Context$/, /31\.4%/, /85\.4k/, /^Tokens$/, /Cache read/, /^Cache$/, /Expires in/, /[45]:[0-5][0-9]/, /^Speed$/, /First token/, /tok\/s/, /^Workspace$/, /tps-meter/]
     for (const surface of ['terminal', 'desktop'] as const) {
       const ui = await $.ui.mount({
         plugin: 'meter-sidebar',
