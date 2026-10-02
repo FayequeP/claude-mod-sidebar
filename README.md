@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/banner.png" alt="sidebar: context, tokens, cache and speed pinned beside every Claude Code session"></p>
 
-# meter-sidebar
+# sidebar
 
 **A live stats sidebar for Claude Code:** context use, token counts, prompt-cache
 hit rate and expiry, the model's real output speed, and your git state, docked
@@ -14,7 +14,7 @@ beside the conversation.
 
 ```sh
 claude plugin marketplace add FayequeP/claude-mod-sidebar
-claude plugin install meter-sidebar@claude-mod-sidebar
+claude plugin install sidebar@claude-mod-sidebar
 ```
 
 It needs Claude Code 2.1.269+ with function hooks turned on in

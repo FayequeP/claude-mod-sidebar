@@ -73,7 +73,7 @@ describe('register', () => {
     const probes = [/^Context$/, /31\.4%/, /85\.4k/, /^Tokens$/, /Cache read/, /^Cache$/, /Expires in/, /^5m cache · API key$/, /[45]:[0-5][0-9]/, /^Speed$/, /First token/, /^Output$/, /^Workspace$/, /tps-meter/]
     for (const surface of ['terminal', 'desktop'] as const) {
       const ui = await $.ui.mount({
-        plugin: 'meter-sidebar',
+        plugin: 'sidebar',
         surface,
         component: 'Pane',
         requestId: 'meter',
@@ -89,7 +89,7 @@ describe('register', () => {
 
     // Inline (main-screen terminal): compact strip, not the tall sidebar.
     const strip = await $.ui.mount({
-      plugin: 'meter-sidebar',
+      plugin: 'sidebar',
       surface: 'terminal',
       component: 'Pane',
       requestId: 'meter',
@@ -113,7 +113,7 @@ describe('register', () => {
     on('session.messages', async () => ({ value: [] }))
 
     const ui = await $.ui.mount({
-      plugin: 'meter-sidebar',
+      plugin: 'sidebar',
       surface: 'terminal',
       component: 'Pane',
       requestId: 'meter',
@@ -149,7 +149,7 @@ describe('register', () => {
     on('session.cwd', async () => ({ value: 'C:\work' }))
 
     const ui = await $.ui.mount({
-      plugin: 'meter-sidebar',
+      plugin: 'sidebar',
       surface: 'terminal',
       component: 'Pane',
       requestId: 'meter',

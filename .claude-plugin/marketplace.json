@@ -4,10 +4,10 @@
   "owner": { "name": "Naveed" },
   "plugins": [
     {
-      "name": "meter-sidebar",
+      "name": "sidebar",
       "source": "./",
       "description": "Shows the model's actual TPS, TTFT and token/cache stats in a docked sidebar. Requires function hooks (early access) and an interactive terminal.",
-      "version": "0.1.13",
+      "version": "0.1.14",
       "keywords": ["function-hooks", "tps", "ttft"]
     }
   ]

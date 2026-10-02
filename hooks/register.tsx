@@ -186,13 +186,13 @@ export const register: Register = on => {
       }
     }
 
-    await $.command.register({ name: 'sidebar', description: 'Show or hide the meter sidebar' })
+    await $.command.register({ name: 'sidebar', description: 'Show or hide the sidebar' })
 
-    // Dock the meter sidebar beside the transcript (columns => docked).
+    // Dock the sidebar beside the transcript (columns => docked).
     await $.ui
       .open(PANE)
       .then(r => { isOpen = r?.isPlaced !== false })
-      .catch(err => $.ui.log(`tps-meter: pane not opened: ${err}`))
+      .catch(err => $.ui.log(`sidebar: pane not opened: ${err}`))
 
     // Tick once a second so the cache countdown moves.
     ;(tick as { cancel(): void } | undefined)?.cancel?.()
@@ -270,7 +270,7 @@ export const register: Register = on => {
         cacheWrite: sums.cacheWrite + (usage.cache_creation_input_tokens ?? 0),
       }
       $.store.set('sums', sums).catch(err => {
-        $.ui.log(`tps-meter: store write failed: ${err}`)
+        $.ui.log(`sidebar: store write failed: ${err}`)
       })
     }
     if (usage || chars > 0) {
@@ -283,7 +283,7 @@ export const register: Register = on => {
         at: endedAt,
       }
       $.store.set('last', last).catch(err => {
-        $.ui.log(`tps-meter: store write failed: ${err}`)
+        $.ui.log(`sidebar: store write failed: ${err}`)
       })
     }
     live = null
