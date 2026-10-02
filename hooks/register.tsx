@@ -17,6 +17,9 @@ let last: Last | null = null // the last finished step
 let sums: Sums = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 let lastInvalidateAt = 0
 let tick: unknown
+let isOpen = false // ponytail: module var, a hot reload reopens the pane anyway
+
+const PANE = { id: 'meter', title: 'Claude Code Sidebar', columns: 38, rows: 3 } as const
 let git: {
   branch: string | null
   dirty: boolean | null
@@ -85,10 +88,11 @@ function Bar(props: { ratio: number; color: string; width: number; surface: stri
     )
   }
   const w = Math.round(r * 1000)
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="4" viewBox="0 0 1000 4" preserveAspectRatio="none"><rect width="1000" height="4" rx="2" fill="${C.track}"/><rect width="${w}" height="4" rx="2" fill="${color}"/></svg>`
+  // 4px bar centred in 14px: the transparent margin spaces rows on desktop.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="14" viewBox="0 0 1000 14" preserveAspectRatio="none"><rect y="5" width="1000" height="4" rx="2" fill="${C.track}"/><rect y="5" width="${w}" height="4" rx="2" fill="${color}"/></svg>`
   return (
     <el.Box width="100%" marginY={0}>
-      <el.Svg source={svg} alt={`${Math.round(r * 100)}%`} height={4} />
+      <el.Svg source={svg} alt={`${Math.round(r * 100)}%`} height={14} />
     </el.Box>
   )
 }
@@ -175,9 +179,12 @@ export const register: Register = on => {
       }
     }
 
+    await $.command.register({ name: 'sidebar', description: 'Show or hide the meter sidebar' })
+
     // Dock the meter sidebar beside the transcript (columns => docked).
     await $.ui
-      .open({ id: 'meter', title: 'Claude Code Sidebar', columns: 38, rows: 3, closeOnEscape: true })
+      .open(PANE)
+      .then(r => { isOpen = r?.isPlaced !== false })
       .catch(err => $.ui.log(`tps-meter: pane not opened: ${err}`))
 
     // Tick once a second so the cache countdown moves.
@@ -187,6 +194,32 @@ export const register: Register = on => {
     })
 
     return result
+  })
+
+  on('command.run', { command: 'sidebar' }, async $ => {
+    const shown = await toggle($)
+    return { text: shown ? 'Sidebar shown.' : 'Sidebar hidden. /sidebar or ctrl+x s shows it again.' }
+  })
+
+  // While hidden, a one-line "show" button above the prompt keeps the shortcut
+  // alive: a Button's `action` chord only fires while that Button is mounted.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (isOpen || e.props.hasSurvey) return next(e)
+    const { Box, Button } = (await $.ui.resolve(e)) as any
+    return (
+      <Box>
+        <Button key="toggle" label="Show sidebar  ctrl+x s" plain dimColor action={TOGGLE_ACTION} onPress={() => toggle($)} />
+      </Box>
+    )
+  })
+
+  // The person can also close it with the pane's own x; keep the toggle in step.
+  on('ui.close', async ($, e, next) => {
+    if (e.id === PANE.id) {
+      isOpen = false
+      $.ui.invalidate('ui.render')
+    }
+    return next(e)
   })
 
   on('turn.step', async function* ($, e, next) {
@@ -382,7 +415,27 @@ export const register: Register = on => {
         ) : (
           <Text color={C.muted}>Not a git repository</Text>
         )}
+        {gap}
+        <els.Button key="toggle" label="Hide sidebar  ctrl+x s" plain dimColor action={TOGGLE_ACTION} onPress={() => toggle($)} />
       </Box>
     )
   })
+}
+
+// Borrowed engine action: the person binds a chord to it in keybindings.json
+// (ctrl+x s -> app:toggleReplTab), and that chord presses whichever toggle
+// button is mounted. ponytail: no custom-action API for plugins yet; swap the
+// name if the engine ever mounts its own handler for this action.
+const TOGGLE_ACTION = 'app:toggleReplTab'
+
+async function toggle($: any): Promise<boolean> {
+  if (isOpen) {
+    await $.ui.close({ id: PANE.id })
+    isOpen = false
+  } else {
+    await $.ui.open(PANE)
+    isOpen = true
+  }
+  $.ui.invalidate('ui.render') // the band's show button appears/disappears
+  return isOpen
 }

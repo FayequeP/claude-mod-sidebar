@@ -122,4 +122,19 @@ describe('register', () => {
     expect(await ui.find({ type: 'Text', text: /tps-meter/ })).toBeUndefined()
     await ui.unmount()
   })
+  test('/sidebar toggles the pane', async ($, on) => {
+    mock.clock(on)
+    mock.store(on, {})
+    const calls: string[] = []
+    on('ui.open', async () => { calls.push('open'); return { value: { isPlaced: true } } })
+    on('ui.close', async () => { calls.push('close'); return { value: undefined } })
+    on('command.register', async () => ({ value: undefined }))
+    on('ui.log', async () => ({ value: undefined }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: 'C:\work' })
+    expect((await $.command.run({ command: 'sidebar' })).text).toMatch(/hidden/)
+    expect((await $.command.run({ command: 'sidebar' })).text).toMatch(/shown/)
+    expect(calls).toEqual(['open', 'close', 'open'])
+  })
 })

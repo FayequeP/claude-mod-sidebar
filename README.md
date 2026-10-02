@@ -47,6 +47,22 @@ git clone https://github.com/FayequeP/claude-mod-sidebar.git
 claude --plugin-dir ./claude-mod-sidebar
 ```
 
+## Show / hide
+
+- `/sidebar` toggles the sidebar.
+- `ctrl+x s` toggles it from the keyboard (terminal) once bound in
+  `~/.claude/keybindings.json`:
+
+  ```json
+  { "bindings": [ { "context": "Global", "bindings": { "ctrl+x s": "app:toggleReplTab" } } ] }
+  ```
+
+  Plugins can't own a key yet, so the sidebar's toggle button borrows that
+  engine action; the chord presses it.
+
+The docked sidebar needs the fullscreen renderer (`/tui fullscreen`); on the
+main screen it shows as a compact strip above the prompt.
+
 ## Develop
 
 ```sh
