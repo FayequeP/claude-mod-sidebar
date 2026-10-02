@@ -69,25 +69,36 @@ function compact(n: number): string {
   return `${+(n / 1_000_000).toFixed(2)}M`
 }
 
-// Thin bar. Terminal: a run of ━ sized to the body (monospace, exact).
-// Desktop/remote: an SVG, since a proportional font makes glyph runs drift.
+// Smooth block bar. Terminal: full cells █, then one partial cell in eighths
+// (▏..▉) so the end moves smoothly, then a dim ░ track; monospace, exact.
+// Desktop/remote: an SVG pill, since a proportional font makes glyph runs drift.
+const EIGHTHS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
+
+function smoothBar(ratio: number, width: number): { fill: string; track: string } {
+  const eighths = Math.round(Math.max(0, Math.min(1, ratio)) * width * 8)
+  const full = Math.floor(eighths / 8)
+  const part = EIGHTHS[eighths % 8]!
+  return { fill: '█'.repeat(full) + part, track: '░'.repeat(width - full - (part ? 1 : 0)) }
+}
+
 function Bar(props: { ratio: number; color: string; width: number; surface: string; el: any }) {
   const { ratio, color, width, surface, el } = props
   const r = Math.max(0, Math.min(1, ratio))
   if (surface === 'terminal') {
-    const filled = Math.round(r * width)
+    const { fill, track } = smoothBar(r, width)
     return (
       <el.Text>
-        <el.Text color={color}>{'━'.repeat(filled)}</el.Text>
-        <el.Text color={C.track}>{'━'.repeat(width - filled)}</el.Text>
+        <el.Text color={color}>{fill}</el.Text>
+        <el.Text color={C.track}>{track}</el.Text>
       </el.Text>
     )
   }
   const w = Math.round(r * 1000)
-  // 4px bar centred in 14px: the transparent margin spaces rows on desktop.
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="14" viewBox="0 0 1000 14" preserveAspectRatio="none"><rect y="5" width="1000" height="4" rx="2" fill="${C.track}"/><rect y="5" width="${w}" height="4" rx="2" fill="${color}"/></svg>`
+  // 8px pill centred in 14px: the transparent margin spaces rows on desktop.
+  // rx is wider than ry because the 1000-wide viewBox is squeezed to the pane.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="14" viewBox="0 0 1000 14" preserveAspectRatio="none"><rect y="3" width="1000" height="8" rx="10" ry="4" fill="${C.track}"/>${w > 0 ? `<rect y="3" width="${Math.max(w, 20)}" height="8" rx="10" ry="4" fill="${color}"/>` : ''}</svg>`
   return (
-    <el.Box width="100%" marginY={0}>
+    <el.Box width="100%">
       <el.Svg source={svg} alt={`${Math.round(r * 100)}%`} height={14} />
     </el.Box>
   )
