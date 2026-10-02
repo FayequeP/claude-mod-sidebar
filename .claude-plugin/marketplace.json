@@ -7,7 +7,7 @@
       "name": "meter-sidebar",
       "source": "./",
       "description": "Shows the model's actual TPS, TTFT and token/cache stats in a docked sidebar. Requires function hooks (early access) and an interactive terminal.",
-      "version": "0.1.10",
+      "version": "0.1.11",
       "keywords": ["function-hooks", "tps", "ttft"]
     }
   ]

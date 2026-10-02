@@ -8,7 +8,7 @@ import type { Register } from 'claude-code'
 //        is the main-conversation prompt-cache TTL (5m or 1h) minus the wall
 //        time since the last response finished.
 
-type Stats = { tps: number; ttftMs: number | null }
+type Stats = { tps: number; ttftMs: number | null; isWarmingUp?: boolean }
 type Last = Stats & { at: number }
 type Sums = { input: number; output: number; cacheRead: number; cacheWrite: number }
 
@@ -232,20 +232,22 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     const startedAt = await $.clock.now()
     let firstTokenAt: number | null = null
+    let lastTokenAt: number | null = null
     let chars = 0
     const stream = next(e)
     try {
       for await (const chunk of stream) {
-        if (chunk.kind === 'text' || chunk.kind === 'thinking') {
+        // Every streamed piece of output counts: visible text, thinking, and
+        // tool-call arguments (a file the model writes streams as `input`).
+        const piece =
+          chunk.kind === 'text' || chunk.kind === 'thinking' ? chunk.text : chunk.kind === 'input' ? chunk.json : null
+        if (piece !== null) {
           const now = await $.clock.now()
           if (firstTokenAt === null) firstTokenAt = now
-          chars += chunk.text.length
-          const estTokens = Math.max(1, Math.round(chars / 4))
-          const spanMs = Math.max(now - firstTokenAt, 1)
-          live = {
-            tps: round1((estTokens / spanMs) * 1000),
-            ttftMs: firstTokenAt - startedAt,
-          }
+          lastTokenAt = now
+          chars += piece.length
+          const tps = speed(Math.round(chars / 4), firstTokenAt, now)
+          live = { tps: tps ?? live?.tps ?? last?.tps ?? 0, ttftMs: firstTokenAt - startedAt, isWarmingUp: tps === null }
           if (now - lastInvalidateAt > 500) {
             lastInvalidateAt = now
             $.ui.invalidate('ui.render')
@@ -259,23 +261,26 @@ export const register: Register = on => {
 
     const result = await stream.result
     const endedAt = await $.clock.now()
-    const estTokens = Math.max(0, Math.round(chars / 4))
     const usage = result.usage
-    const tokens = usage?.output_tokens ?? estTokens
-    if (tokens > 0) {
-      const spanMs = Math.max(endedAt - (firstTokenAt ?? startedAt), 1)
-      const tps = round1((tokens / spanMs) * 1000)
-      last = { tps, ttftMs: firstTokenAt === null ? null : firstTokenAt - startedAt, at: endedAt }
-      if (usage) {
-        sums = {
-          input: sums.input + (usage.input_tokens ?? 0),
-          output: sums.output + (usage.output_tokens ?? 0),
-          cacheRead: sums.cacheRead + (usage.cache_read_input_tokens ?? 0),
-          cacheWrite: sums.cacheWrite + (usage.cache_creation_input_tokens ?? 0),
-        }
-        $.store.set('sums', sums).catch(err => {
-          $.ui.log(`tps-meter: store write failed: ${err}`)
-        })
+    if (usage) {
+      sums = {
+        input: sums.input + (usage.input_tokens ?? 0),
+        output: sums.output + (usage.output_tokens ?? 0),
+        cacheRead: sums.cacheRead + (usage.cache_read_input_tokens ?? 0),
+        cacheWrite: sums.cacheWrite + (usage.cache_creation_input_tokens ?? 0),
+      }
+      $.store.set('sums', sums).catch(err => {
+        $.ui.log(`tps-meter: store write failed: ${err}`)
+      })
+    }
+    if (usage || chars > 0) {
+      // A response arrived: the cache clock restarts whether or not the
+      // speed reading below is trustworthy.
+      const tps = firstTokenAt === null ? null : speed(usage?.output_tokens ?? Math.round(chars / 4), firstTokenAt, lastTokenAt!)
+      last = {
+        tps: tps ?? last?.tps ?? 0,
+        ttftMs: firstTokenAt === null ? (last?.ttftMs ?? null) : firstTokenAt - startedAt,
+        at: endedAt,
       }
       $.store.set('last', last).catch(err => {
         $.ui.log(`tps-meter: store write failed: ${err}`)
@@ -294,8 +299,10 @@ export const register: Register = on => {
     // CONTEXT figures from the session usage (same source as the status line).
     let contextPct: number | null = null
     let contextLine = '— / —'
+    let rateLimits: { percentUsed: number }[] = []
     try {
       const usage = await $.session.usage()
+      rateLimits = usage?.rateLimits ?? []
       if (usage && usage.context && usage.context.window) {
         const used = usage.context.tokens ?? 0
         contextPct = used / usage.context.window
@@ -305,17 +312,21 @@ export const register: Register = on => {
       // a test or a build without session.usage: draw without context
     }
 
-    // CACHE TTL for the "Valid for" countdown.
-    let ttlMin = 5
-    try {
-      const override = await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL')
-      if (override === '1h') ttlMin = 60
-      else if (override === '5m') ttlMin = 5
-      const force5m = await $.env.get('FORCE_PROMPT_CACHING_5M')
-      if (force5m === '1') ttlMin = 5
-    } catch {
-      // keep the default
-    }
+    // Prompt-cache TTL of the main conversation, resolved as Claude Code does.
+    const [envTtl, force5m, enable1h, settings] = await Promise.all([
+      $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL').catch(() => undefined),
+      $.env.get('FORCE_PROMPT_CACHING_5M').catch(() => undefined),
+      $.env.get('ENABLE_PROMPT_CACHING_1H').catch(() => undefined),
+      $.settings.read().catch(() => ({}) as Record<string, unknown>),
+    ])
+    const ttl = resolveTtl({
+      envTtl,
+      force5m,
+      enable1h,
+      setting: settings.promptCacheTtl,
+      rateLimits,
+    })
+    const ttlMin = ttl.minutes
 
     const now = await $.clock.now()
     if (now - gitAt > 5000) {
@@ -340,7 +351,7 @@ export const register: Register = on => {
     const ctxPctText = contextPct === null ? '—' : `${(contextPct * 100).toFixed(1)}%`
     const rateText = rate === null ? '—' : `${(rate * 100).toFixed(1)}%`
     const validText = remaining === null ? '—' : formatCountdown(remaining)
-    const speedText = liveStats ? formatTps(liveStats.tps) : '—'
+    const speedText = liveStats && liveStats.tps > 0 ? formatTps(liveStats.tps) : '—'
     // Expiry is the one value that changes meaning near zero: color it then.
     const expiryColor = remaining === null ? C.muted : remaining < 30_000 ? C.bad : remaining < 90_000 ? C.warn : undefined
     const el = els
@@ -397,7 +408,7 @@ export const register: Register = on => {
           <Text color={C.muted}>Expires in</Text>
           <Text>
             <Text color={expiryColor}>{validText}</Text>
-            <Text color={C.muted}> / {ttlMin === 60 ? '1h' : '5m'}</Text>
+            <Text color={C.muted}> / {ttlMin === 60 ? '1h' : '5m'} · {ttl.source}</Text>
           </Text>
         </Box>
         <Bar ratio={remainingRatio} color={expiryColor ?? C.accent} width={barW} surface={e.surface} el={el} />
@@ -451,4 +462,40 @@ async function toggle($: any): Promise<boolean> {
   }
   $.ui.invalidate('ui.render') // the band's show button appears/disappears
   return isOpen
+}
+
+// Prompt-cache TTL for the main conversation, per Claude Code's own
+// `promptCacheTtl` setting description: CLAUDE_CODE_PROMPT_CACHE_TTL wins,
+// then the setting, then automatic (1 hour on a Claude subscription within its
+// usage limits, 5 minutes on an API key, Bedrock, Vertex or Foundry).
+// rateLimits is empty off a subscription; any window at 100% means over limits.
+// ponytail: where FORCE_PROMPT_CACHING_5M / ENABLE_PROMPT_CACHING_1H sit
+// against the setting is not documented; they rank just under the env TTL.
+export function resolveTtl(i: {
+  envTtl?: string
+  force5m?: string
+  enable1h?: string
+  setting?: unknown
+  rateLimits: { percentUsed: number }[]
+}): { minutes: 5 | 60; source: string } {
+  if (i.envTtl === '1h') return { minutes: 60, source: 'env' }
+  if (i.envTtl === '5m') return { minutes: 5, source: 'env' }
+  if (i.force5m === '1') return { minutes: 5, source: 'env' }
+  if (i.enable1h === '1') return { minutes: 60, source: 'env' }
+  if (i.setting === '1h') return { minutes: 60, source: 'setting' }
+  if (i.setting === '5m') return { minutes: 5, source: 'setting' }
+  if (i.rateLimits.length === 0) return { minutes: 5, source: 'API key' }
+  if (i.rateLimits.some(r => r.percentUsed >= 100)) return { minutes: 5, source: 'over limit' }
+  return { minutes: 60, source: 'subscription' }
+}
+
+// Output tokens per second over the streaming span (first piece -> last piece).
+// Under MIN_SPAN_MS the span is mostly network burst, not generation: a reply
+// that lands in one or two chunks would read as thousands of tok/s, so no
+// reading is taken (null) and the previous one stays on screen.
+const MIN_SPAN_MS = 500
+export function speed(tokens: number, firstAt: number, lastAt: number): number | null {
+  const spanMs = lastAt - firstAt
+  if (tokens <= 0 || spanMs < MIN_SPAN_MS) return null
+  return round1((tokens / spanMs) * 1000)
 }

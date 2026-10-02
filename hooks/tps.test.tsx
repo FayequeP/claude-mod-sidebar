@@ -1,5 +1,6 @@
 /* @jsx h */
 import { describe, expect, mock, test, tier } from 'claude-code/testing'
+import { resolveTtl, speed } from './register'
 
 tier('user')
 
@@ -42,6 +43,7 @@ describe('register', () => {
 
     on('turn.step', async function* ($, e) {
       yield { kind: 'text', index: 0, text: 'hello world from the model, nicely streamed' }
+      yield { kind: 'text', index: 0, text: ' and a second piece two seconds later' }
       yield { kind: 'stop', stopReason: 'end_turn', usage: USAGE }
       return {
         turnId: e.turnId,
@@ -68,7 +70,7 @@ describe('register', () => {
     while (!step.done) step = await stream.next()
     await stream.result
 
-    const probes = [/^Context$/, /31\.4%/, /85\.4k/, /^Tokens$/, /Cache read/, /^Cache$/, /Expires in/, /[45]:[0-5][0-9]/, /^Speed$/, /First token/, /tok\/s/, /^Workspace$/, /tps-meter/]
+    const probes = [/^Context$/, /31\.4%/, /85\.4k/, /^Tokens$/, /Cache read/, /^Cache$/, /Expires in/, /[45]:[0-5][0-9]/, /^Speed$/, /First token/, /^Output$/, /^Workspace$/, /tps-meter/]
     for (const surface of ['terminal', 'desktop'] as const) {
       const ui = await $.ui.mount({
         plugin: 'meter-sidebar',
@@ -156,5 +158,22 @@ describe('register', () => {
     expect(await ui.find({ type: 'Text', text: /^1M \/ 1M tokens$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /1000/ })).toBeUndefined()
     await ui.unmount()
+  })
+  test('cache TTL resolves like Claude Code', async () => {
+    const sub = [{ percentUsed: 40 }]
+    expect(resolveTtl({ rateLimits: sub })).toEqual({ minutes: 60, source: 'subscription' })
+    expect(resolveTtl({ rateLimits: [] })).toEqual({ minutes: 5, source: 'API key' })
+    expect(resolveTtl({ rateLimits: [{ percentUsed: 100 }] })).toEqual({ minutes: 5, source: 'over limit' })
+    expect(resolveTtl({ rateLimits: sub, setting: '5m' })).toEqual({ minutes: 5, source: 'setting' })
+    expect(resolveTtl({ rateLimits: [], setting: '1h' })).toEqual({ minutes: 60, source: 'setting' })
+    expect(resolveTtl({ rateLimits: sub, setting: '1h', envTtl: '5m' })).toEqual({ minutes: 5, source: 'env' })
+    expect(resolveTtl({ rateLimits: sub, force5m: '1' })).toEqual({ minutes: 5, source: 'env' })
+    expect(resolveTtl({ rateLimits: [], enable1h: '1' })).toEqual({ minutes: 60, source: 'env' })
+  })
+  test('speed ignores bursts and measures first to last piece', async () => {
+    expect(speed(20, 0, 2000)).toBe(10) // 20 tokens over 2s
+    expect(speed(300, 1000, 1004)).toBeNull() // one burst: no reading, not 75,000 tok/s
+    expect(speed(0, 0, 5000)).toBeNull()
+    expect(speed(100, 0, 500)).toBe(200)
   })
 })
