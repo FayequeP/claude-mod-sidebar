@@ -1,10 +1,19 @@
-# claude-mod-tps-meter
+# meter-sidebar
 
 A Claude Code mod (function-hooks plugin) that shows the model's actual speed
-under the prompt, on every turn (and in the desktop app\x27s prompt-footer mode labels):
+in a docked **Meter sidebar** beside the transcript, on every turn:
 
 ```
-66.6 TPS · avg 55.2 · ttft 0.8s
+CONTEXT          31.4%
+█░░░░░░░░░░░░
+TOKENS
+↑ Input          10
+↓ Output         20
+CACHE            100.0%
+Valid for        5:00
+ACTIVITY
+First token      800ms
+Output speed     66 tok/s
 ```
 
 - **TPS** — output tokens per second, from the API's real `usage.output_tokens`
@@ -27,7 +36,7 @@ Requires Claude Code 2.1.269+ and an interactive terminal.
 
 ```sh
 claude plugin marketplace add FayequeP/claude-mod-tps-meter
-claude plugin install tps-meter@claude-mod-tps-meter
+claude plugin install meter-sidebar@claude-mod-tps-meter
 ```
 
 or load from source for one session:

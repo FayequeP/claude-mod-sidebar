@@ -11,29 +11,34 @@ const USAGE = {
   model: 'test-model',
 }
 
-const BAND = {
-  hasSurvey: false,
-  isWorking: true,
-  maxRows: 10,
-  bodyColumns: 80,
-  scroll: { offset: 0, bodyRows: 9 },
+const PANE_PROPS = {
+  title: 'Claude Code Sidebar',
+  isFocused: false,
+  bodyColumns: 38,
+  placement: 'dock' as const,
+  scroll: { offset: 0, bodyRows: 30 },
   view: {},
 }
 
 describe('register', () => {
-  test('a streamed step sets TPS and TTFT, drawn under the prompt', async ($, on) => {
+  test('the meter pane shows context, tokens, cache and activity', async ($, on) => {
     const clock = mock.clock(on)
     mock.store(on, {})
 
-    // Beneath every plugin: the hint line the engine would draw under the prompt.
-    on('ui.render', { component: 'PromptHint' }, async ($, e) => {
-      const { Box, Text } = await $.ui.resolve(e)
-      return (
-        <Box>
-          <Text>{e.props.hint}</Text>
-        </Box>
-      )
-    })
+    on('session.usage', async () => ({
+      value: {
+        context: { tokens: 85400, window: 272000, percent: 31 },
+        rateLimits: [],
+      },
+    }))
+    on('env.get', async () => ({ value: undefined }))
+    on('session.cwd', async () => ({ value: 'D:\\Buisness\\Claude-tps-mod\\tps-meter' }))
+    on('session.repo', async () => ({ value: null }))
+    on('session.messages', async () => ({ value: [] }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('ui.open', async () => ({ value: undefined }))
+    on('ui.invalidate', async () => ({ value: undefined }))
+    on('ui.log', async () => ({ value: undefined }))
 
     on('turn.step', async function* ($, e) {
       yield { kind: 'text', index: 0, text: 'hello world from the model, nicely streamed' }
@@ -48,94 +53,59 @@ describe('register', () => {
       }
     })
 
-    const stream = $.turn.step({ turnId: 't1', index: 0, model: 'test-model', messageCount: 1 })
-    await stream.next() // first text chunk
-    clock.advance(2000) // two seconds of streaming before the stop lands
-    await stream.next() // stop chunk
-    await stream.result
-
-    const ui = await $.ui.mount({
-      plugin: 'tps-meter',
+    await $.session.start({
       surface: 'terminal',
-      component: 'PromptHint',
-      props: { isDraft: false, isWorking: true, hint: '? for shortcuts' },
-    })
-    expect(await ui.find({ type: 'Text', text: /TPS/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /ttft/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /avg/ })).toBeDefined()
-    await ui.unmount()
-  })
-
-  test('the desktop app gets the stats through SessionMode', async ($, on) => {
-    const clock = mock.clock(on)
-    mock.store(on, {})
-
-    on('ui.render', { component: 'SessionMode' }, async ($, e) => {
-      const { Box, Text } = await $.ui.resolve(e)
-      return (
-        <Box>
-          <Text>{e.props.modes.join(' & ')}</Text>
-        </Box>
-      )
-    })
-
-    let statusText: string | undefined
-    on('ui.status', async ($, e) => {
-      statusText = e.text
-      return { value: undefined }
-    })
-
-    on('turn.step', async function* ($, e) {
-      yield { kind: 'text', index: 0, text: 'hello world from the model, nicely streamed' }
-      yield { kind: 'stop', stopReason: 'end_turn', usage: USAGE }
-      return {
-        turnId: e.turnId,
-        index: e.index,
-        answer: 'hello world',
-        toolUses: [],
-        stopReason: 'end_turn',
-        usage: USAGE,
-      }
+      isInteractive: true,
+      cwd: 'D:\\Buisness\\Claude-tps-mod\\tps-meter',
     })
 
     const stream = $.turn.step({ turnId: 't1', index: 0, model: 'test-model', messageCount: 1 })
     await stream.next()
     clock.advance(2000)
-    await stream.next()
+    // Drain the stream: the mod's generator only finishes (and records the
+    // finished step) once the consumer pulls past its last yield.
+    let step = await stream.next()
+    while (!step.done) step = await stream.next()
     await stream.result
 
     const ui = await $.ui.mount({
-      plugin: 'tps-meter',
-      surface: 'desktop',
-      component: 'SessionMode',
-      props: { modes: ['manual mode on'] },
+      plugin: 'meter-sidebar',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'meter',
+      props: PANE_PROPS,
     })
-    expect(await ui.find({ type: 'Text', text: /TPS · avg/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /ttft/ })).toBeDefined()
+    const probes = [/CONTEXT/, /31\.4%/, /85\.4k/, /TOKENS/, /Cache read/, /CACHE/, /Valid for/, /5:00/, /ACTIVITY/, /First token/, /Output speed/, /WORKSPACE/, /live while streaming/]
+    const missing: string[] = []
+    for (const p of probes) {
+      if (!(await ui.find({ type: 'Text', text: p }))) missing.push(String(p))
+    }
+    expect(missing).toEqual([])
     await ui.unmount()
-    expect(statusText).toMatch(/TPS · avg .* · ttft/)
   })
 
-  test('no stats yet: the hint line is left untouched', async ($, on) => {
+  test('before any turn: labels still draw, values are placeholders', async ($, on) => {
     mock.clock(on)
     mock.store(on, {})
 
-    on('ui.render', { component: 'PromptHint' }, async ($, e) => {
-      const { Box, Text } = await $.ui.resolve(e)
-      return (
-        <Box>
-          <Text>{e.props.hint}</Text>
-        </Box>
-      )
-    })
+    on('session.usage', async () => ({
+      value: { context: { tokens: 0, window: 272000 }, rateLimits: [] },
+    }))
+    on('env.get', async () => ({ value: undefined }))
+    on('session.cwd', async () => ({ value: 'C:\\work' }))
+    on('session.repo', async () => ({ value: null }))
+    on('session.messages', async () => ({ value: [] }))
 
     const ui = await $.ui.mount({
-      plugin: 'tps-meter',
+      plugin: 'meter-sidebar',
       surface: 'terminal',
-      component: 'PromptHint',
-      props: { isDraft: false, isWorking: false, hint: '? for shortcuts' },
+      component: 'Pane',
+      requestId: 'meter',
+      props: PANE_PROPS,
     })
-    expect(await ui.find({ type: 'Text', text: /TPS/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /CONTEXT/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /—/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /tps-meter/ })).toBeUndefined()
     await ui.unmount()
   })
 })

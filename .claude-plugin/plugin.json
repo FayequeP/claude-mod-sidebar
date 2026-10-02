@@ -1,8 +1,8 @@
 {
-  "name": "tps-meter",
-  "version": "0.1.4",
-  "description": "Shows the model's speed under the prompt: actual TPS (tokens per second), TTFT (time to first token) and a running average, measured off the streamed response. Needs function hooks (early access) and an interactive terminal.",
-  "author": { "name": "Naveed" },
+  "name": "meter-sidebar",
+  "version": "0.1.5",
+  "description": "Shows the model's real output speed, token and prompt-cache stats in a docked sidebar beside the transcript.",
+  "author": { "name": "Fayeque Peerzade" },
   "license": "MIT",
-  "keywords": ["function-hooks", "tps", "ttft", "statusline"]
+  "keywords": ["function-hooks", "tps", "ttft", "sidebar"]
 }
