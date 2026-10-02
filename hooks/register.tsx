@@ -29,6 +29,18 @@ function formatTps(n: number): string {
   return n >= 100 ? String(Math.round(n)) : n.toFixed(1)
 }
 
+// One-line readout shared by the PromptHint (terminal) and SessionMode
+// (desktop) hooks: `66.6 TPS · avg 55.2 · ttft 0.8s`.
+function statsLabel(): string | null {
+  const stats = live ?? last
+  const avg = averageTps()
+  if (!stats && avg === null) return null
+  const tps = stats ? `${formatTps(stats.tps)} TPS` : '— TPS'
+  const avgPart = avg === null ? 'avg —' : `avg ${formatTps(avg)}`
+  const ttft = stats ? formatTtft(stats.ttftMs) : 'ttft —'
+  return `${tps} · ${avgPart} · ${ttft}`
+}
+
 export const register: Register = on => {
   // Load the running average from the store so it survives restarts.
   on('session.start', async ($, e, next) => {
@@ -119,17 +131,25 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
-    const stats = live ?? last
-    const avg = averageTps()
-    if (!stats && avg === null) return next(e)
-    const tps = stats ? `${formatTps(stats.tps)} TPS` : '— TPS'
-    const avgPart = avg === null ? 'avg —' : `avg ${formatTps(avg)}`
-    const ttft = stats ? formatTtft(stats.ttftMs) : 'ttft —'
+    const label = statsLabel()
+    if (label === null) return next(e)
     // Rewrite the dim hint line under the prompt; the engine draws the new
     // string in its place.
     return next({
       ...e,
-      props: { ...e.props, hint: `${e.props.hint} · ${tps} · ${avgPart} · ${ttft}` },
+      props: { ...e.props, hint: `${e.props.hint} · ${label}` },
+    })
+  })
+
+  // The desktop app draws no PromptHint band; SessionMode is the one render
+  // site it raises (the dim mode labels at the right of the prompt footer).
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    if (e.surface !== 'desktop') return next(e)
+    const label = statsLabel()
+    if (label === null) return next(e)
+    return next({
+      ...e,
+      props: { ...e.props, modes: [...e.props.modes, label] },
     })
   })
 }

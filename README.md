@@ -1,7 +1,7 @@
 # claude-mod-tps-meter
 
 A Claude Code mod (function-hooks plugin) that shows the model's actual speed
-under the prompt, on every turn:
+under the prompt, on every turn (and in the desktop app\x27s prompt-footer mode labels):
 
 ```
 66.6 TPS · avg 55.2 · ttft 0.8s
