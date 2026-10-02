@@ -17,6 +17,15 @@ let last: Last | null = null // the last finished step
 let sums: Sums = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 let lastInvalidateAt = 0
 let tick: unknown
+let git: {
+  branch: string | null
+  dirty: boolean | null
+  changed: number
+  added: number
+  removed: number
+  tracked: number
+} | null = null
+let gitAt = 0
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 
@@ -47,10 +56,60 @@ function formatCountdown(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function bar(ratio: number, width: number): string {
+function barSplit(ratio: number, width: number): { filled: string; empty: string } {
   const clamped = Math.max(0, Math.min(1, ratio))
   const filled = Math.round(clamped * width)
-  return '█'.repeat(filled) + '░'.repeat(width - filled)
+  return { filled: '█'.repeat(filled), empty: '█'.repeat(width - filled) }
+}
+
+function Bar(props: { ratio: number; width: number; color: string; Box: any; Text: any }) {
+  const { ratio, width, color, Box, Text } = props
+  const { filled, empty } = barSplit(ratio, width)
+  return (
+    <Box flexDirection="row">
+      <Text color={color}>{filled}</Text>
+      <Text dimColor>{empty}</Text>
+    </Box>
+  )
+}
+
+function Header(props: { label: string; color?: string; cols: number; right?: string; Box: any; Text: any }) {
+  const { label, color, cols, right, Box, Text } = props
+  const labelLen = label.length + 1
+  const rightLen = right ? right.length + 1 : 0
+  const dashes = '─'.repeat(Math.max(2, cols - labelLen - rightLen))
+  return (
+    <Box flexDirection="row" justifyContent="space-between" width={cols}>
+      <Text color={color ?? 'cyan'}>{`${label} ${dashes}`}</Text>
+      {right !== undefined ? <Text>{right}</Text> : undefined}
+    </Box>
+  )
+}
+
+async function pollGit($: any): Promise<void> {
+  try {
+    const branchRun = await $.process.run(['git', 'branch', '--show-current'], { timeoutMs: 3000 })
+    const statusRun = await $.process.run(['git', 'status', '--porcelain'], { timeoutMs: 3000 })
+    const diffRun = await $.process.run(['git', 'diff', '--numstat'], { timeoutMs: 3000 })
+    const counts = await $.process.run(['git', 'ls-files'], { timeoutMs: 3000 })
+    const branch = branchRun.exitCode === 0 ? String(branchRun.stdout).trim() || null : null
+    const statusLines =
+      statusRun.exitCode === 0 ? String(statusRun.stdout).split('\n').filter(l => l.trim().length > 0) : []
+    let added = 0
+    let removed = 0
+    for (const line of String(diffRun.stdout).split('\n')) {
+      const parts = line.split(/\s+/)
+      if (parts.length >= 2 && /^\d+$/.test(parts[0]!) && /^\d+$/.test(parts[1]!)) {
+        added += Number(parts[0])
+        removed += Number(parts[1])
+      }
+    }
+    const tracked =
+      counts.exitCode === 0 ? String(counts.stdout).split('\n').filter(l => l.trim().length > 0).length : 0
+    git = { branch, dirty: statusLines.length > 0, changed: statusLines.length, added, removed, tracked }
+  } catch {
+    // not a repo or git missing: keep last known
+  }
 }
 
 function hitRate(): number | null {
@@ -188,17 +247,16 @@ export const register: Register = on => {
     }
 
     const now = await $.clock.now()
+    if (now - gitAt > 5000) {
+      gitAt = now
+      await pollGit($)
+    }
     const remaining = last ? ttlMin * 60_000 - (now - last.at) : null
     const remainingRatio = remaining !== null ? remaining / (ttlMin * 60_000) : 0
 
     let workspace = ''
-    let repo: string | null = null
-    let messageCount = 0
     try {
       workspace = await $.session.cwd()
-      const r = await $.session.repo()
-      repo = r ? (r.remote ?? r.root) : null
-      messageCount = (await $.session.messages()).length
     } catch {
       // keep defaults
     }
@@ -208,68 +266,77 @@ export const register: Register = on => {
     const rate = hitRate()
     const contextBarRatio = contextPct ?? 0
 
+    const fmtK = (n: number): string => {
+      if (n >= 1000) {
+        const v = (n / 1000).toFixed(1)
+        return `${v.endsWith('.0') ? v.slice(0, -2) : v}k`
+      }
+      return String(n)
+    }
+
     return (
       <Box flexDirection="column" width={cols}>
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text color="blue">CONTEXT</Text>
-          <Text>{contextPct === null ? '—' : `${(contextPct * 100).toFixed(1)}%`}</Text>
+        <Header label="CONTEXT" color="blue" cols={cols} right={contextPct === null ? '—' : `${(contextPct * 100).toFixed(1)}%`} Box={Box} Text={Text} />
+        <Bar ratio={contextBarRatio} width={cols} color="blue" Box={Box} Text={Text} />
+        <Box flexDirection="row" justifyContent="space-between" width={cols}>
+          <Text dimColor>Used</Text>
+          <Text dimColor>{contextLine}</Text>
         </Box>
-        <Text color="blue">{bar(contextBarRatio, cols)}</Text>
-        <Text dimColor>Used</Text>
-        <Text dimColor>{contextLine}</Text>
         <Box height={1} />
 
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text color="blue">TOKENS</Text>
-          <Text> </Text>
-        </Box>
+        <Header label="TOKENS" color="blue" cols={cols} Box={Box} Text={Text} />
         <Row label="↑ Input" value={formatCount(sums.input)} Box={Box} Text={Text} cols={cols} />
         <Row label="↓ Output" value={formatCount(sums.output)} Box={Box} Text={Text} cols={cols} />
-        <Row label="↻ Cache read" value={formatCount(sums.cacheRead)} Box={Box} Text={Text} cols={cols} green />
+        <Row label="⊙ Cache read" value={formatCount(sums.cacheRead)} Box={Box} Text={Text} cols={cols} green />
         <Row label="+ Cache write" value={formatCount(sums.cacheWrite)} Box={Box} Text={Text} cols={cols} />
-        <Text dimColor>{'─'.repeat(cols)}</Text>
+        <Text dimColor>{'╌'.repeat(cols)}</Text>
         <Row label="Session total" value={formatCount(sums.input + sums.output + sums.cacheRead + sums.cacheWrite)} Box={Box} Text={Text} cols={cols} />
         <Box height={1} />
 
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text color="blue">CACHE</Text>
+        <Header label="CACHE" color="blue" cols={cols} Box={Box} Text={Text} />
+        <Box flexDirection="row" justifyContent="space-between" width={cols}>
+          <Text dimColor>Hit rate</Text>
           <Text color="green">{rate === null ? '—' : `${(rate * 100).toFixed(1)}%`}</Text>
         </Box>
-        <Text color="green">{bar(rate ?? 0, cols)}</Text>
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text dimColor>read {formatShort(sums.cacheRead)}</Text>
-          <Text dimColor>miss {formatShort(sums.cacheWrite)}</Text>
+        <Bar ratio={rate ?? 0} width={cols} color="green" Box={Box} Text={Text} />
+        <Box flexDirection="row" justifyContent="space-between" width={cols}>
+          <Text dimColor>read {fmtK(sums.cacheRead)}</Text>
+          <Text dimColor>miss {fmtK(sums.cacheWrite)}</Text>
         </Box>
         <Box height={1} />
-        <Box flexDirection="row" justifyContent="space-between">
+        <Box flexDirection="row" justifyContent="space-between" width={cols}>
           <Text>Valid for</Text>
           <Text>{remaining === null ? '—' : formatCountdown(remaining)}</Text>
         </Box>
-        <Text color="yellow">{bar(remainingRatio, cols)}</Text>
-        <Box flexDirection="row" justifyContent="space-between">
+        <Bar ratio={remainingRatio} width={cols} color="yellow" Box={Box} Text={Text} />
+        <Box flexDirection="row" justifyContent="space-between" width={cols}>
           <Text dimColor>{ttlMin === 60 ? '1h' : '5m'} window</Text>
           <Text dimColor>resets on next call</Text>
         </Box>
         <Box height={1} />
 
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text color="blue">ACTIVITY</Text>
-          <Text> </Text>
-        </Box>
+        <Header label="ACTIVITY" color="blue" cols={cols} Box={Box} Text={Text} />
         <Row label="First token" value={formatTtft(liveStats?.ttftMs ?? null)} Box={Box} Text={Text} cols={cols} />
         <Row label="Output speed" value={liveStats ? formatTps(liveStats.tps) : '—'} Box={Box} Text={Text} cols={cols} />
         <Box height={1} />
 
-        <Text color="magenta">WORKSPACE</Text>
+        <Header label="WORKSPACE" color="magenta" cols={cols} Box={Box} Text={Text} />
         <Text bold>{workspaceName}</Text>
-        <Text dimColor>{workspace}</Text>
-        <Row label="Git" value={repo ?? 'unavailable'} Box={Box} Text={Text} cols={cols} orange={!repo} />
-        <Row label="History" value={`${messageCount} entries`} Box={Box} Text={Text} cols={cols} />
-        <Row label="Storage" value="saved" Box={Box} Text={Text} cols={cols} green />
+        <Row label="Branch" value={git?.branch ?? '—'} Box={Box} Text={Text} cols={cols} magenta />
+        <Row label="Git" value={git ? (git.dirty ? 'Modified' : 'Clean') : '—'} Box={Box} Text={Text} cols={cols} orange={git?.dirty === true} green={git?.dirty === false} />
+        <Row label="Changed" value={git ? `${git.changed} files` : '—'} Box={Box} Text={Text} cols={cols} />
+        <Box flexDirection="row" justifyContent="space-between" width={cols}>
+          <Text dimColor>Lines</Text>
+          <Box flexDirection="row">
+            <Text color="green">{git ? `+${fmtK(git.added)}` : '—'}</Text>
+            <Text> </Text>
+            <Text color="red">{git ? `-${fmtK(git.removed)}` : ''}</Text>
+          </Box>
+        </Box>
         <Box height={1} />
 
         <Text dimColor>{'─'.repeat(cols)}</Text>
-        <Text dimColor>live while streaming · persisted across sessions</Text>
+        <Text dimColor>ctrl+b hide · ctrl+t tokens · ctrl+k cache</Text>
       </Box>
     )
   })
@@ -283,12 +350,14 @@ function Row(props: {
   cols: number
   green?: boolean
   orange?: boolean
+  magenta?: boolean
 }) {
-  const { label, value, Box, Text, cols, green, orange } = props
+  const { label, value, Box, Text, cols, green, orange, magenta } = props
+  const color = green ? 'green' : magenta ? 'magenta' : orange ? 'yellow' : undefined
   return (
     <Box flexDirection="row" justifyContent="space-between" width={cols}>
       <Text dimColor>{label}</Text>
-      <Text color={green ? 'green' : orange ? 'yellow' : undefined}>{value}</Text>
+      <Text color={color}>{value}</Text>
     </Box>
   )
 }

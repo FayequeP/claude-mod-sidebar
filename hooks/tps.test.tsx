@@ -75,7 +75,7 @@ describe('register', () => {
       requestId: 'meter',
       props: PANE_PROPS,
     })
-    const probes = [/CONTEXT/, /31\.4%/, /85\.4k/, /TOKENS/, /Cache read/, /CACHE/, /Valid for/, /5:00/, /ACTIVITY/, /First token/, /Output speed/, /WORKSPACE/, /live while streaming/]
+    const probes = [/CONTEXT/, /31\.4%/, /85\.4k/, /TOKENS/, /Cache read/, /CACHE/, /Hit rate/, /Valid for/, /5:00/, /ACTIVITY/, /First token/, /Output speed/, /WORKSPACE/, /ctrl\+b hide/]
     const missing: string[] = []
     for (const p of probes) {
       if (!(await ui.find({ type: 'Text', text: p }))) missing.push(String(p))
