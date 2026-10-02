@@ -1,5 +1,5 @@
 {
-  "name": "claude-mod-tps-meter",
+  "name": "claude-mod-sidebar",
   "description": "Claude Code mod that shows the model's actual TPS, TTFT and token/cache stats in a docked sidebar.",
   "owner": { "name": "Naveed" },
   "plugins": [

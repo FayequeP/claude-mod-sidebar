@@ -18,8 +18,9 @@ Output speed     66 tok/s
 
 - **TPS** — output tokens per second, from the API's real `usage.output_tokens`
   over the streaming span (first token → last chunk)
-- **avg** — running mean TPS across finished steps, persisted via `$.store`
 - **TTFT** — time to first token, request start → first streamed token
+- **Tokens & cache** — cumulative input/output/cache-read/cache-write counts,
+  the cache hit rate, and the prompt-cache "Valid for" countdown
 
 While a response streams, a live estimate (~4 chars/token) is shown instead.
 
@@ -35,15 +36,15 @@ module of every other installed plugin that ships one):
 Requires Claude Code 2.1.269+ and an interactive terminal.
 
 ```sh
-claude plugin marketplace add FayequeP/claude-mod-tps-meter
-claude plugin install meter-sidebar@claude-mod-tps-meter
+claude plugin marketplace add FayequeP/claude-mod-sidebar
+claude plugin install meter-sidebar@claude-mod-sidebar
 ```
 
 or load from source for one session:
 
 ```sh
-git clone https://github.com/FayequeP/claude-mod-tps-meter.git
-claude --plugin-dir ./claude-mod-tps-meter
+git clone https://github.com/FayequeP/claude-mod-sidebar.git
+claude --plugin-dir ./claude-mod-sidebar
 ```
 
 ## Develop
