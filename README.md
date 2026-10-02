@@ -1,19 +1,14 @@
+<p align="center"><img src="docs/banner.png" alt="sidebar: context, tokens, cache and speed pinned beside every Claude Code session"></p>
+
 # meter-sidebar
 
 **A live stats sidebar for Claude Code:** context use, token counts, prompt-cache
 hit rate and expiry, the model's real output speed, and your git state, docked
 beside the conversation.
 
-```
-Context                        31.4%
-███████████▎░░░░░░░░░░░░░░░░░░░░░░░░
-Cache
-Hit rate                       94.4%
-█████████████████████████████████▉░░
-Expires in   42:13 / 1h · subscription
-Speed
-Output                      86 tok/s
-```
+<p align="center"><img src="docs/terminal.png" alt="The sidebar docked beside a Claude Code session in the terminal"></p>
+
+<p align="center"><img src="docs/desktop.png" alt="The sidebar in the Claude Code tab of the desktop app"></p>
 
 ## Install
 
@@ -81,8 +76,8 @@ cache, which is cheaper and faster. After that, the whole context is written
 to cache again.
 
 The sidebar works out the time to live the way Claude Code does for the main
-conversation. The first rule that matches wins, and its source is shown after
-the time, for example `42:13 / 1h · subscription`:
+conversation. The first rule that matches wins, and its source is shown under
+the countdown bar, for example `1h cache · subscription`:
 
 | Shown as | Rule | Lasts |
 |---|---|---|

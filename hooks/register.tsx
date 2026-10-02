@@ -408,10 +408,12 @@ export const register: Register = on => {
           <Text color={C.muted}>Expires in</Text>
           <Text>
             <Text color={expiryColor}>{validText}</Text>
-            <Text color={C.muted}> / {ttlMin === 60 ? '1h' : '5m'} · {ttl.source}</Text>
+            <Text color={C.muted}> / {ttlMin === 60 ? '1h' : '5m'}</Text>
           </Text>
         </Box>
         <Bar ratio={remainingRatio} color={expiryColor ?? C.accent} width={barW} surface={e.surface} el={el} />
+        {/* Which rule set the TTL, on its own line: beside the time it overflowed a narrow pane. */}
+        <Text color={C.muted}>{ttlMin === 60 ? '1h' : '5m'} cache · {ttl.source}</Text>
         {gap}
 
         <Title label="Speed" el={el} />
