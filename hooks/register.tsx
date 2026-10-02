@@ -103,22 +103,19 @@ export const register: Register = on => {
     return result
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    if (e.surface !== 'terminal') return next(e)
     const stats = live ?? last
     const avg = averageTps()
     if (!stats && avg === null) return next(e)
-    const { Box, Text } = await $.ui.resolve(e)
     const tps = stats ? `${formatTps(stats.tps)} TPS` : '— TPS'
     const avgPart = avg === null ? 'avg —' : `avg ${formatTps(avg)}`
     const ttft = stats ? formatTtft(stats.ttftMs) : 'ttft —'
-    return (
-      <Box flexDirection="column">
-        <Box justifyContent="flex-end">
-          <Text dimColor>{`${tps} · ${avgPart} · ${ttft}`}</Text>
-        </Box>
-        {await next(e)}
-      </Box>
-    )
+    // Rewrite the dim hint line under the prompt; the engine draws the new
+    // string in its place.
+    return next({
+      ...e,
+      props: { ...e.props, hint: `${e.props.hint} · ${tps} · ${avgPart} · ${ttft}` },
+    })
   })
 }

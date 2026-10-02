@@ -1,13 +1,13 @@
 {
   "name": "claude-mod-tps-meter",
-  "description": "Claude Code mod that shows the model's actual TPS, TTFT and a running average above the prompt.",
+  "description": "Claude Code mod that shows the model's actual TPS, TTFT and a running average under the prompt.",
   "owner": { "name": "Naveed" },
   "plugins": [
     {
       "name": "tps-meter",
       "source": "./",
-      "description": "Shows the model's actual TPS, TTFT and a running average above the prompt. Requires function hooks (early access) and an interactive terminal.",
-      "version": "0.1.0",
+      "description": "Shows the model's actual TPS, TTFT and a running average under the prompt. Requires function hooks (early access) and an interactive terminal.",
+      "version": "0.1.1",
       "keywords": ["function-hooks", "tps", "ttft"]
     }
   ]

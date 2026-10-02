@@ -21,16 +21,16 @@ const BAND = {
 }
 
 describe('register', () => {
-  test('a streamed step sets TPS and TTFT, drawn above the prompt', async ($, on) => {
+  test('a streamed step sets TPS and TTFT, drawn under the prompt', async ($, on) => {
     const clock = mock.clock(on)
     mock.store(on, {})
 
-    // Beneath every plugin: the default band the engine would draw.
-    on('ui.render', { component: 'AbovePrompt' }, async ($, e) => {
+    // Beneath every plugin: the hint line the engine would draw under the prompt.
+    on('ui.render', { component: 'PromptHint' }, async ($, e) => {
       const { Box, Text } = await $.ui.resolve(e)
       return (
         <Box>
-          <Text>prompt band</Text>
+          <Text>{e.props.hint}</Text>
         </Box>
       )
     })
@@ -57,8 +57,8 @@ describe('register', () => {
     const ui = await $.ui.mount({
       plugin: 'tps-meter',
       surface: 'terminal',
-      component: 'AbovePrompt',
-      props: BAND,
+      component: 'PromptHint',
+      props: { isDraft: false, isWorking: true, hint: '? for shortcuts' },
     })
     expect(await ui.find({ type: 'Text', text: /TPS/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /ttft/ })).toBeDefined()
@@ -66,15 +66,15 @@ describe('register', () => {
     await ui.unmount()
   })
 
-  test('no stats yet: the band is left untouched', async ($, on) => {
+  test('no stats yet: the hint line is left untouched', async ($, on) => {
     mock.clock(on)
     mock.store(on, {})
 
-    on('ui.render', { component: 'AbovePrompt' }, async ($, e) => {
+    on('ui.render', { component: 'PromptHint' }, async ($, e) => {
       const { Box, Text } = await $.ui.resolve(e)
       return (
         <Box>
-          <Text>prompt band</Text>
+          <Text>{e.props.hint}</Text>
         </Box>
       )
     })
@@ -82,8 +82,8 @@ describe('register', () => {
     const ui = await $.ui.mount({
       plugin: 'tps-meter',
       surface: 'terminal',
-      component: 'AbovePrompt',
-      props: BAND,
+      component: 'PromptHint',
+      props: { isDraft: false, isWorking: false, hint: '? for shortcuts' },
     })
     expect(await ui.find({ type: 'Text', text: /TPS/ })).toBeUndefined()
     await ui.unmount()
