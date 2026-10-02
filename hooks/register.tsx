@@ -51,6 +51,17 @@ export const register: Register = on => {
         finishedSteps = s.finishedSteps
       }
     }
+    const lastStored = await $.store.get('last').catch(() => undefined)
+    if (lastStored && typeof lastStored === 'object') {
+      const s = lastStored as { tps?: unknown; ttftMs?: unknown }
+      if (typeof s.tps === 'number' && Number.isFinite(s.tps)) {
+        last = {
+          tps: s.tps,
+          ttftMs: typeof s.ttftMs === 'number' && Number.isFinite(s.ttftMs) ? s.ttftMs : null,
+        }
+        $.ui.invalidate('ui.render')
+      }
+    }
     return result
   })
 
@@ -95,6 +106,9 @@ export const register: Register = on => {
       sumTps += tps
       finishedSteps += 1
       $.store.set('avg', { sumTps, finishedSteps }).catch(err => {
+        $.ui.log(`tps-meter: store write failed: ${err}`)
+      })
+      $.store.set('last', last).catch(err => {
         $.ui.log(`tps-meter: store write failed: ${err}`)
       })
     }

@@ -7,7 +7,7 @@
       "name": "tps-meter",
       "source": "./",
       "description": "Shows the model's actual TPS, TTFT and a running average under the prompt. Requires function hooks (early access) and an interactive terminal.",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "keywords": ["function-hooks", "tps", "ttft"]
     }
   ]
