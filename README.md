@@ -6,9 +6,10 @@
 hit rate and expiry, the model's real output speed, and your git state, docked
 beside the conversation.
 
-<p align="center"><img src="docs/terminal.png" alt="The sidebar docked beside a Claude Code session in the terminal"></p>
-
-<p align="center"><img src="docs/desktop.png" alt="The sidebar in the Claude Code tab of the desktop app"></p>
+<p align="center">
+  <img src="docs/terminal.png" alt="The sidebar docked beside a Claude Code session in the terminal" width="49%">
+  <img src="docs/desktop.png" alt="The sidebar in the Claude Code tab of the desktop app" width="49%">
+</p>
 
 ## Install
 
