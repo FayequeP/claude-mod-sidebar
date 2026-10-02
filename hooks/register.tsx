@@ -38,10 +38,6 @@ function formatTps(n: number): string {
   return n >= 100 ? `${Math.round(n)} tok/s` : `${n.toFixed(0)} tok/s`
 }
 
-function formatCount(n: number): string {
-  return n.toLocaleString('en-US')
-}
-
 function formatShort(n: number | undefined): string {
   if (n === undefined) return '—'
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
@@ -56,33 +52,64 @@ function formatCountdown(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function barSplit(ratio: number, width: number): { filled: string; empty: string } {
-  const clamped = Math.max(0, Math.min(1, ratio))
-  const filled = Math.round(clamped * width)
-  return { filled: '█'.repeat(filled), empty: '█'.repeat(width - filled) }
+// One accent on a neutral base. Green/amber/red appear only as status
+// (git state, cache about to expire, lines added/removed), never decoration.
+const C = {
+  accent: '#7aa2f7',
+  track: '#3b4048',
+  muted: '#8b919a',
+  ok: '#8fbf7a',
+  warn: '#d9a55b',
+  bad: '#e07a7a',
 }
 
-function Bar(props: { ratio: number; width: number; color: string; Box: any; Text: any }) {
-  const { ratio, width, color, Box, Text } = props
-  const { filled, empty } = barSplit(ratio, width)
+// Compact counts: 76, 16.8k, 3.68M. Calmer than 3,684,818 in a narrow column.
+function compact(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${+(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
+  return `${+(n / 1_000_000).toFixed(2)}M`
+}
+
+// Thin bar. Terminal: a run of ━ sized to the body (monospace, exact).
+// Desktop/remote: an SVG, since a proportional font makes glyph runs drift.
+function Bar(props: { ratio: number; color: string; width: number; surface: string; el: any }) {
+  const { ratio, color, width, surface, el } = props
+  const r = Math.max(0, Math.min(1, ratio))
+  if (surface === 'terminal') {
+    const filled = Math.round(r * width)
+    return (
+      <el.Text>
+        <el.Text color={color}>{'━'.repeat(filled)}</el.Text>
+        <el.Text color={C.track}>{'━'.repeat(width - filled)}</el.Text>
+      </el.Text>
+    )
+  }
+  const w = Math.round(r * 1000)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="4" viewBox="0 0 1000 4" preserveAspectRatio="none"><rect width="1000" height="4" rx="2" fill="${C.track}"/><rect width="${w}" height="4" rx="2" fill="${color}"/></svg>`
   return (
-    <Box flexDirection="row">
-      <Text color={color}>{filled}</Text>
-      <Text dimColor>{empty}</Text>
-    </Box>
+    <el.Box width="100%" marginY={0}>
+      <el.Svg source={svg} alt={`${Math.round(r * 100)}%`} height={4} />
+    </el.Box>
   )
 }
 
-function Header(props: { label: string; color?: string; cols: number; right?: string; Box: any; Text: any }) {
-  const { label, color, cols, right, Box, Text } = props
-  const labelLen = label.length + 1
-  const rightLen = right ? right.length + 1 : 0
-  const dashes = '─'.repeat(Math.max(2, cols - labelLen - rightLen))
+function Title(props: { label: string; right?: string; el: any }) {
+  const { label, right, el } = props
   return (
-    <Box flexDirection="row" justifyContent="space-between" width={cols}>
-      <Text color={color ?? 'cyan'}>{`${label} ${dashes}`}</Text>
-      {right !== undefined ? <Text>{right}</Text> : undefined}
-    </Box>
+    <el.Box flexDirection="row" justifyContent="space-between" width="100%">
+      <el.Text bold>{label}</el.Text>
+      {right !== undefined ? <el.Text bold color={C.accent}>{right}</el.Text> : undefined}
+    </el.Box>
+  )
+}
+
+function Row(props: { label: string; value: string; el: any; color?: string; dim?: boolean }) {
+  const { label, value, el, color, dim } = props
+  return (
+    <el.Box flexDirection="row" justifyContent="space-between" width="100%">
+      <el.Text color={C.muted}>{label}</el.Text>
+      <el.Text color={dim ? C.muted : color}>{value}</el.Text>
+    </el.Box>
   )
 }
 
@@ -92,7 +119,11 @@ async function pollGit($: any): Promise<void> {
     const statusRun = await $.process.run(['git', 'status', '--porcelain'], { timeoutMs: 3000 })
     const diffRun = await $.process.run(['git', 'diff', '--numstat'], { timeoutMs: 3000 })
     const counts = await $.process.run(['git', 'ls-files'], { timeoutMs: 3000 })
-    const branch = branchRun.exitCode === 0 ? String(branchRun.stdout).trim() || null : null
+    if (branchRun.exitCode !== 0) {
+      git = null // not a repo: the sidebar shows its empty state
+      return
+    }
+    const branch = String(branchRun.stdout).trim() || null
     const statusLines =
       statusRun.exitCode === 0 ? String(statusRun.stdout).split('\n').filter(l => l.trim().length > 0) : []
     let added = 0
@@ -146,7 +177,7 @@ export const register: Register = on => {
 
     // Dock the meter sidebar beside the transcript (columns => docked).
     await $.ui
-      .open({ id: 'meter', title: 'Claude Code Sidebar', columns: 38, closeOnEscape: true })
+      .open({ id: 'meter', title: 'Claude Code Sidebar', columns: 38, rows: 3, closeOnEscape: true })
       .catch(err => $.ui.log(`tps-meter: pane not opened: ${err}`))
 
     // Tick once a second so the cache countdown moves.
@@ -217,8 +248,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== 'meter') return next(e)
-    const { Box, Text } = await $.ui.resolve(e)
-    const cols = Math.max(20, e.props.bodyColumns || 30)
+    const els = (await $.ui.resolve(e)) as any // Svg exists on desktop, not terminal
+    const { Box, Text } = els
 
     // CONTEXT figures from the session usage (same source as the status line).
     let contextPct: number | null = null
@@ -266,98 +297,92 @@ export const register: Register = on => {
     const rate = hitRate()
     const contextBarRatio = contextPct ?? 0
 
-    const fmtK = (n: number): string => {
-      if (n >= 1000) {
-        const v = (n / 1000).toFixed(1)
-        return `${v.endsWith('.0') ? v.slice(0, -2) : v}k`
-      }
-      return String(n)
+    const ctxPctText = contextPct === null ? '—' : `${(contextPct * 100).toFixed(1)}%`
+    const rateText = rate === null ? '—' : `${(rate * 100).toFixed(1)}%`
+    const validText = remaining === null ? '—' : formatCountdown(remaining)
+    const speedText = liveStats ? formatTps(liveStats.tps) : '—'
+    // Expiry is the one value that changes meaning near zero: color it then.
+    const expiryColor = remaining === null ? C.muted : remaining < 30_000 ? C.bad : remaining < 90_000 ? C.warn : undefined
+    const el = els
+    const barW = Math.max(10, (e.props.bodyColumns || 30) - 2)
+
+    // Main-screen terminal seats the pane inline above the prompt, full width:
+    // a sidebar layout there is a takeover, so draw a compact strip instead.
+    if (e.props.placement === 'inline') {
+      const dot = <Text color={C.track}>  ·  </Text>
+      return (
+        <Box flexDirection="column" width="100%">
+          <Box flexDirection="row" width="100%" flexWrap="wrap">
+            <Text color={C.muted}>Context </Text>
+            <Bar ratio={contextBarRatio} color={C.accent} width={16} surface={e.surface} el={el} />
+            <Text bold color={C.accent}> {ctxPctText}</Text>
+            {dot}
+            <Text color={C.muted}>Cache </Text><Text>{rateText}</Text>
+            <Text color={C.muted}> expires </Text><Text color={expiryColor}>{validText}</Text>
+            {dot}
+            <Text color={C.muted}>Speed </Text><Text>{speedText}</Text>
+            {dot}
+            <Text color={C.muted}>Total </Text>
+            <Text>{compact(sums.input + sums.output + sums.cacheRead + sums.cacheWrite)}</Text>
+          </Box>
+          <Text color={C.muted}>Run /tui fullscreen to dock this as a sidebar.</Text>
+        </Box>
+      )
     }
 
+    const gap = <Box height={1} />
     return (
-      <Box flexDirection="column" width={cols}>
-        <Header label="CONTEXT" color="blue" cols={cols} right={contextPct === null ? '—' : `${(contextPct * 100).toFixed(1)}%`} Box={Box} Text={Text} />
-        <Bar ratio={contextBarRatio} width={cols} color="blue" Box={Box} Text={Text} />
-        <Box flexDirection="row" justifyContent="space-between" width={cols}>
-          <Text dimColor>Used</Text>
-          <Text dimColor>{contextLine}</Text>
-        </Box>
-        <Box height={1} />
+      <Box flexDirection="column" width="100%" paddingX={1} paddingTop={1}>
+        <Title label="Context" right={ctxPctText} el={el} />
+        <Bar ratio={contextBarRatio} color={C.accent} width={barW} surface={e.surface} el={el} />
+        <Text color={C.muted}>{contextLine} tokens</Text>
+        {gap}
 
-        <Header label="TOKENS" color="blue" cols={cols} Box={Box} Text={Text} />
-        <Row label="↑ Input" value={formatCount(sums.input)} Box={Box} Text={Text} cols={cols} />
-        <Row label="↓ Output" value={formatCount(sums.output)} Box={Box} Text={Text} cols={cols} />
-        <Row label="⊙ Cache read" value={formatCount(sums.cacheRead)} Box={Box} Text={Text} cols={cols} green />
-        <Row label="+ Cache write" value={formatCount(sums.cacheWrite)} Box={Box} Text={Text} cols={cols} />
-        <Text dimColor>{'╌'.repeat(cols)}</Text>
-        <Row label="Session total" value={formatCount(sums.input + sums.output + sums.cacheRead + sums.cacheWrite)} Box={Box} Text={Text} cols={cols} />
-        <Box height={1} />
+        <Title label="Tokens" el={el} />
+        <Row label="Input" value={compact(sums.input)} el={el} />
+        <Row label="Output" value={compact(sums.output)} el={el} />
+        <Row label="Cache read" value={compact(sums.cacheRead)} el={el} />
+        <Row label="Cache write" value={compact(sums.cacheWrite)} el={el} />
+        <Box flexDirection="row" justifyContent="space-between" width="100%">
+          <Text>Total</Text>
+          <Text bold>{compact(sums.input + sums.output + sums.cacheRead + sums.cacheWrite)}</Text>
+        </Box>
+        {gap}
 
-        <Header label="CACHE" color="blue" cols={cols} Box={Box} Text={Text} />
-        <Box flexDirection="row" justifyContent="space-between" width={cols}>
-          <Text dimColor>Hit rate</Text>
-          <Text color="green">{rate === null ? '—' : `${(rate * 100).toFixed(1)}%`}</Text>
+        <Title label="Cache" el={el} />
+        <Row label="Hit rate" value={rateText} el={el} color={C.accent} />
+        <Bar ratio={rate ?? 0} color={C.accent} width={barW} surface={e.surface} el={el} />
+        <Box flexDirection="row" justifyContent="space-between" width="100%">
+          <Text color={C.muted}>Expires in</Text>
+          <Text>
+            <Text color={expiryColor}>{validText}</Text>
+            <Text color={C.muted}> / {ttlMin === 60 ? '1h' : '5m'}</Text>
+          </Text>
         </Box>
-        <Bar ratio={rate ?? 0} width={cols} color="green" Box={Box} Text={Text} />
-        <Box flexDirection="row" justifyContent="space-between" width={cols}>
-          <Text dimColor>read {fmtK(sums.cacheRead)}</Text>
-          <Text dimColor>miss {fmtK(sums.cacheWrite)}</Text>
-        </Box>
-        <Box height={1} />
-        <Box flexDirection="row" justifyContent="space-between" width={cols}>
-          <Text>Valid for</Text>
-          <Text>{remaining === null ? '—' : formatCountdown(remaining)}</Text>
-        </Box>
-        <Bar ratio={remainingRatio} width={cols} color="yellow" Box={Box} Text={Text} />
-        <Box flexDirection="row" justifyContent="space-between" width={cols}>
-          <Text dimColor>{ttlMin === 60 ? '1h' : '5m'} window</Text>
-          <Text dimColor>resets on next call</Text>
-        </Box>
-        <Box height={1} />
+        <Bar ratio={remainingRatio} color={expiryColor ?? C.accent} width={barW} surface={e.surface} el={el} />
+        {gap}
 
-        <Header label="ACTIVITY" color="blue" cols={cols} Box={Box} Text={Text} />
-        <Row label="First token" value={formatTtft(liveStats?.ttftMs ?? null)} Box={Box} Text={Text} cols={cols} />
-        <Row label="Output speed" value={liveStats ? formatTps(liveStats.tps) : '—'} Box={Box} Text={Text} cols={cols} />
-        <Box height={1} />
+        <Title label="Speed" el={el} />
+        <Row label="First token" value={formatTtft(liveStats?.ttftMs ?? null)} el={el} />
+        <Row label="Output" value={speedText} el={el} />
+        {gap}
 
-        <Header label="WORKSPACE" color="magenta" cols={cols} Box={Box} Text={Text} />
-        <Text bold>{workspaceName}</Text>
-        <Row label="Branch" value={git?.branch ?? '—'} Box={Box} Text={Text} cols={cols} magenta />
-        <Row label="Git" value={git ? (git.dirty ? 'Modified' : 'Clean') : '—'} Box={Box} Text={Text} cols={cols} orange={git?.dirty === true} green={git?.dirty === false} />
-        <Row label="Changed" value={git ? `${git.changed} files` : '—'} Box={Box} Text={Text} cols={cols} />
-        <Box flexDirection="row" justifyContent="space-between" width={cols}>
-          <Text dimColor>Lines</Text>
-          <Box flexDirection="row">
-            <Text color="green">{git ? `+${fmtK(git.added)}` : '—'}</Text>
-            <Text> </Text>
-            <Text color="red">{git ? `-${fmtK(git.removed)}` : ''}</Text>
+        <Title label={workspaceName} right={git?.branch ?? undefined} el={el} />
+        {git ? (
+          <Box flexDirection="row" justifyContent="space-between" width="100%">
+            <Text color={git.dirty ? C.warn : C.ok}>
+              {git.dirty ? `${git.changed} changed` : 'Clean'}
+            </Text>
+            <Text>
+              <Text color={C.ok}>+{compact(git.added)}</Text>
+              <Text color={C.muted}> </Text>
+              <Text color={C.bad}>−{compact(git.removed)}</Text>
+            </Text>
           </Box>
-        </Box>
-        <Box height={1} />
-
-        <Text dimColor>{'─'.repeat(cols)}</Text>
-        <Text dimColor>ctrl+b hide · ctrl+t tokens · ctrl+k cache</Text>
+        ) : (
+          <Text color={C.muted}>Not a git repository</Text>
+        )}
       </Box>
     )
   })
-}
-
-function Row(props: {
-  label: string
-  value: string
-  Box: any
-  Text: any
-  cols: number
-  green?: boolean
-  orange?: boolean
-  magenta?: boolean
-}) {
-  const { label, value, Box, Text, cols, green, orange, magenta } = props
-  const color = green ? 'green' : magenta ? 'magenta' : orange ? 'yellow' : undefined
-  return (
-    <Box flexDirection="row" justifyContent="space-between" width={cols}>
-      <Text dimColor>{label}</Text>
-      <Text color={color}>{value}</Text>
-    </Box>
-  )
 }

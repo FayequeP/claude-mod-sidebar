@@ -68,20 +68,34 @@ describe('register', () => {
     while (!step.done) step = await stream.next()
     await stream.result
 
-    const ui = await $.ui.mount({
+    const probes = [/^Context$/, /31\.4%/, /85\.4k/, /^Tokens$/, /Cache read/, /^Cache$/, /Expires in/, /[45]:[0-5][0-9]/, /^Speed$/, /First token/, /tok\/s/, /tps-meter/]
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const ui = await $.ui.mount({
+        plugin: 'meter-sidebar',
+        surface,
+        component: 'Pane',
+        requestId: 'meter',
+        props: PANE_PROPS,
+      })
+      const missing: string[] = []
+      for (const p of probes) {
+        if (!(await ui.find({ type: 'Text', text: p }))) missing.push(String(p))
+      }
+      expect([surface, ...missing]).toEqual([surface])
+      await ui.unmount()
+    }
+
+    // Inline (main-screen terminal): compact strip, not the tall sidebar.
+    const strip = await $.ui.mount({
       plugin: 'meter-sidebar',
       surface: 'terminal',
       component: 'Pane',
       requestId: 'meter',
-      props: PANE_PROPS,
+      props: { ...PANE_PROPS, placement: 'inline' as const },
     })
-    const probes = [/CONTEXT/, /31\.4%/, /85\.4k/, /TOKENS/, /Cache read/, /CACHE/, /Hit rate/, /Valid for/, /5:00/, /ACTIVITY/, /First token/, /Output speed/, /WORKSPACE/, /ctrl\+b hide/]
-    const missing: string[] = []
-    for (const p of probes) {
-      if (!(await ui.find({ type: 'Text', text: p }))) missing.push(String(p))
-    }
-    expect(missing).toEqual([])
-    await ui.unmount()
+    expect(await strip.find({ type: 'Text', text: /31\.4%/ })).toBeDefined()
+    expect(await strip.find({ type: 'Text', text: /First token/ })).toBeUndefined()
+    await strip.unmount()
   })
 
   test('before any turn: labels still draw, values are placeholders', async ($, on) => {
@@ -103,7 +117,7 @@ describe('register', () => {
       requestId: 'meter',
       props: PANE_PROPS,
     })
-    expect(await ui.find({ type: 'Text', text: /CONTEXT/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Context$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /—/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /tps-meter/ })).toBeUndefined()
     await ui.unmount()
