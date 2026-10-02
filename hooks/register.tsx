@@ -355,7 +355,7 @@ export const register: Register = on => {
     // Expiry is the one value that changes meaning near zero: color it then.
     const expiryColor = remaining === null ? C.muted : remaining < 30_000 ? C.bad : remaining < 90_000 ? C.warn : undefined
     const el = els
-    const barW = Math.max(10, (e.props.bodyColumns || 30) - 2)
+    const barW = Math.max(10, (e.props.bodyColumns || 30) - 3) // minus paddingLeft 1 + paddingRight 2
 
     // Main-screen terminal seats the pane inline above the prompt, full width:
     // a sidebar layout there is a takeover, so draw a compact strip instead.
@@ -383,7 +383,7 @@ export const register: Register = on => {
 
     const gap = <Box height={1} />
     return (
-      <Box flexDirection="column" width="100%" minHeight={e.props.scroll?.bodyRows} paddingX={1} paddingTop={1}>
+      <Box flexDirection="column" width="100%" minHeight={e.props.scroll?.bodyRows} paddingLeft={1} paddingRight={2} paddingTop={1}>
         <Title label="Context" right={ctxPctText} el={el} />
         <Bar ratio={contextBarRatio} color={C.accent} width={barW} surface={e.surface} el={el} />
         <Text color={C.muted}>{contextLine} tokens</Text>

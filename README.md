@@ -101,15 +101,3 @@ background helpers use 5 minutes by default on every plan; the countdown
 follows the main conversation only.
 
 </details>
-
-## Develop
-
-```sh
-git clone https://github.com/FayequeP/claude-mod-sidebar.git
-claude --plugin-dir ./claude-mod-sidebar   # load from source for one session
-claude plugin validate .
-claude plugin test .
-```
-
-`.claude/types/` is git-ignored. Regenerate the type declarations inside a
-session with `/plugin-types`, then run `tsc -p .`.
