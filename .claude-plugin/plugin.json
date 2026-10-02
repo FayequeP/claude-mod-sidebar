@@ -1,0 +1,8 @@
+{
+  "name": "tps-meter",
+  "version": "0.1.0",
+  "description": "Shows the model's speed above the prompt: actual TPS (tokens per second), TTFT (time to first token) and a running average, measured off the streamed response. Needs function hooks (early access) and an interactive terminal.",
+  "author": { "name": "Naveed" },
+  "license": "MIT",
+  "keywords": ["function-hooks", "tps", "ttft", "statusline"]
+}
