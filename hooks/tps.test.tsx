@@ -79,6 +79,12 @@ describe('register', () => {
       )
     })
 
+    let statusText: string | undefined
+    on('ui.status', async ($, e) => {
+      statusText = e.text
+      return { value: undefined }
+    })
+
     on('turn.step', async function* ($, e) {
       yield { kind: 'text', index: 0, text: 'hello world from the model, nicely streamed' }
       yield { kind: 'stop', stopReason: 'end_turn', usage: USAGE }
@@ -107,6 +113,7 @@ describe('register', () => {
     expect(await ui.find({ type: 'Text', text: /TPS · avg/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /ttft/ })).toBeDefined()
     await ui.unmount()
+    expect(statusText).toMatch(/TPS · avg .* · ttft/)
   })
 
   test('no stats yet: the hint line is left untouched', async ($, on) => {

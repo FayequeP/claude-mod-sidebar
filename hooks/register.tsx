@@ -74,6 +74,16 @@ export const register: Register = on => {
         $.ui.invalidate('ui.render')
       }
     }
+    const label = statsLabel()
+    if (label !== null && e.surface !== null && e.surface !== 'terminal') {
+      // Desktop app (or another remote surface): pin the readout as this
+      // plugin's status line — it is the only place a plugin's text shows.
+      try {
+        $.ui.status(label)
+      } catch (err) {
+        $.ui.log(`tps-meter: status failed: ${err}`)
+      }
+    }
     return result
   })
 
@@ -147,6 +157,15 @@ export const register: Register = on => {
     if (e.surface !== 'desktop') return next(e)
     const label = statsLabel()
     if (label === null) return next(e)
+    // The desktop app raises no PromptHint band, but it does raise SessionMode
+    // (the dim mode labels in the prompt footer). Pin the same readout as this
+    // plugin's status line at the same time, so there is a visible copy even
+    // if the desktop build ignores the rewritten modes.
+    try {
+      $.ui.status(label)
+    } catch (err) {
+      $.ui.log(`tps-meter: status failed: ${err}`)
+    }
     return next({
       ...e,
       props: { ...e.props, modes: [...e.props.modes, label] },
