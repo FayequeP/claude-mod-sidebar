@@ -41,12 +41,6 @@ function formatTps(n: number): string {
   return n >= 100 ? `${Math.round(n)} tok/s` : `${n.toFixed(0)} tok/s`
 }
 
-function formatShort(n: number | undefined): string {
-  if (n === undefined) return '—'
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
-  return String(n)
-}
-
 function formatCountdown(ms: number): string {
   if (ms <= 0) return 'expired'
   const total = Math.round(ms / 1000)
@@ -69,7 +63,9 @@ const C = {
 // Compact counts: 76, 16.8k, 3.68M. Calmer than 3,684,818 in a narrow column.
 function compact(n: number): string {
   if (n < 1000) return String(n)
-  if (n < 1_000_000) return `${+(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
+  const k = (n / 1000).toFixed(n < 100_000 ? 1 : 0)
+  // 999,950 rounds to "1000" k: that is 1M, so fall through to millions.
+  if (+k < 1000) return `${+k}k`
   return `${+(n / 1_000_000).toFixed(2)}M`
 }
 
@@ -292,7 +288,7 @@ export const register: Register = on => {
       if (usage && usage.context && usage.context.window) {
         const used = usage.context.tokens ?? 0
         contextPct = used / usage.context.window
-        contextLine = `${formatShort(used)} / ${formatShort(usage.context.window)}`
+        contextLine = `${compact(used)} / ${compact(usage.context.window)}`
       }
     } catch {
       // a test or a build without session.usage: draw without context

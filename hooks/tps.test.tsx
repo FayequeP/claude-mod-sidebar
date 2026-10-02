@@ -137,4 +137,24 @@ describe('register', () => {
     expect((await $.command.run({ command: 'sidebar' })).text).toMatch(/shown/)
     expect(calls).toEqual(['open', 'close', 'open'])
   })
+  test('a 1M context window reads 1M, not 1000.0k', async ($, on) => {
+    mock.clock(on)
+    mock.store(on, {})
+    on('session.usage', async () => ({
+      value: { context: { tokens: 999_950, window: 1_000_000 }, rateLimits: [] },
+    }))
+    on('env.get', async () => ({ value: undefined }))
+    on('session.cwd', async () => ({ value: 'C:\work' }))
+
+    const ui = await $.ui.mount({
+      plugin: 'meter-sidebar',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'meter',
+      props: PANE_PROPS,
+    })
+    expect(await ui.find({ type: 'Text', text: /^1M \/ 1M tokens$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /1000/ })).toBeUndefined()
+    await ui.unmount()
+  })
 })
