@@ -33,7 +33,7 @@ the prompt.
 
 | Section | What you get |
 |---|---|
-| **Tasks** | The agent's to-do list: a progress bar and every task, marked ✓ done, ▸ in progress or ○ not started. Hidden when there's no list |
+| **Tasks** | The agent's to-do list: a progress bar and every task, marked ✓ done, a spinner and timer while in progress, ○ not started, or ✗ failed (Claude marks a failed task done with a title like `FAILED: …`). Hidden when there's no list |
 | **Context** | How full the context window is, as a bar and `85.4k / 272k` |
 | **Tokens** | Input, output, cache read, cache write and the session total |
 | **Cache** | Hit rate, and a countdown to when the prompt cache expires |

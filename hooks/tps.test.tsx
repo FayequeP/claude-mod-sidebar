@@ -1,6 +1,6 @@
 /* @jsx h */
 import { describe, expect, mock, test, tier } from 'claude-code/testing'
-import { applyTaskCreate, applyTaskUpdate, applyTodoWrite, resolveTtl, speed, formatElapsed, spinnerFrame, trackStarts, visibleTasks } from './register'
+import { failedTitle, applyTaskCreate, applyTaskUpdate, applyTodoWrite, resolveTtl, speed, formatElapsed, spinnerFrame, trackStarts, visibleTasks } from './register'
 
 tier('user')
 
@@ -272,5 +272,13 @@ describe('register', () => {
     expect([...starts]).toEqual([['b:b', 9000]]) // finished dropped, new one stamped
     expect(spinnerFrame(0)).not.toBe(spinnerFrame(125))
     expect([formatElapsed(0), formatElapsed(42_000), formatElapsed(3_729_000)]).toEqual(['0:00', '0:42', '1:02:09'])
+  })
+  test('a completed task titled FAILED reads as failed', async () => {
+    expect(failedTitle('FAILED: Run python setup_db.py')).toBe('Run python setup_db.py')
+    expect(failedTitle('Failed - deploy')).toBe('deploy')
+    expect(failedTitle('Blocked: waiting on API key')).toBe('waiting on API key')
+    expect(failedTitle('Errors page cleanup')).toBeNull() // a word that merely starts with one
+    expect(failedTitle('Fix failed builds')).toBeNull() // failure word not at the start
+    expect(failedTitle('Create hello.py')).toBeNull()
   })
 })

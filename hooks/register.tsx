@@ -425,8 +425,8 @@ export const register: Register = on => {
       <Box flexDirection="column" width="100%" minHeight={e.props.scroll?.bodyRows} paddingLeft={1} paddingRight={2} paddingTop={1}>
         {tasks.length > 0 ? (
           <Box flexDirection="column" width="100%" marginBottom={1}>
-            <Title label="Tasks" right={`${taskDone(tasks)}/${tasks.length}`} el={el} />
-            <Bar ratio={taskDone(tasks) / tasks.length} color={C.accent} width={barW} surface={e.surface} el={el} />
+            <Title label="Tasks" right={`${taskDone(tasks)}/${tasks.length}${taskFailed(tasks) ? ` · ${taskFailed(tasks)} ✗` : ''}`} el={el} />
+            <Bar ratio={(taskDone(tasks) + taskFailed(tasks)) / tasks.length} color={C.accent} width={barW} surface={e.surface} el={el} />
             <TaskRows tasks={tasks} starts={taskStarts} now={now} el={el} />
           </Box>
         ) : undefined}
@@ -557,7 +557,18 @@ const TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 const asStatus = (v: unknown): TaskStatus | null =>
   v === 'pending' || v === 'in_progress' || v === 'completed' ? v : null
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
-const taskDone = (list: Task[]) => list.filter(t => t.status === 'completed').length
+const taskDone = (list: Task[]) => list.filter(t => t.status === 'completed' && !failedTitle(t.title)).length
+const taskFailed = (list: Task[]) => list.filter(t => t.status === 'completed' && failedTitle(t.title)).length
+
+// The task tools have no "failed" state: Claude marks a failed task completed
+// and says so in its title ("FAILED: Run setup_db.py"). Read that prefix as a
+// failure; the rest of the title is the task. ponytail: a heuristic on Claude's
+// wording; extend FAIL_PREFIX if it starts using another word.
+const FAIL_PREFIX = /^\s*(?:failed|failure|error|blocked|skipped|cancell?ed)\b\s*[:\-–—]?\s*/i
+export function failedTitle(title: string): string | null {
+  const m = FAIL_PREFIX.exec(title)
+  return m && m[0].trim() ? title.slice(m[0].length) || title : null
+}
 
 export function applyTodoWrite(todos: unknown): Task[] {
   if (!Array.isArray(todos)) return []
@@ -614,17 +625,19 @@ function TaskRows(props: { tasks: Task[]; starts: Map<string, number>; now: numb
   const { rows, more } = visibleTasks(tasks)
   return (
     <el.Box flexDirection="column" width="100%">
-      {rows.map(t => (
+      {rows.map(t => {
+        const failed = t.status === 'completed' ? failedTitle(t.title) : null
+        return (
         <el.Box key={`task-${t.id}`} flexDirection="row" width="100%">
-          <el.Text color={t.status === 'completed' ? C.ok : t.status === 'in_progress' ? C.accent : C.muted}>
-            {t.status === 'in_progress' ? spinnerFrame(now) : TASK_MARK[t.status]}{' '}
+          <el.Text color={failed !== null ? C.bad : t.status === 'completed' ? C.ok : t.status === 'in_progress' ? C.accent : C.muted}>
+            {t.status === 'in_progress' ? spinnerFrame(now) : failed !== null ? '✗' : TASK_MARK[t.status]}{' '}
           </el.Text>
           <el.Text
             wrap="truncate"
             bold={t.status === 'in_progress'}
             color={t.status === 'in_progress' ? undefined : C.muted}
           >
-            {t.status === 'in_progress' ? (t.active ?? t.title) : t.title}
+            {t.status === 'in_progress' ? (t.active ?? t.title) : (failed ?? t.title)}
           </el.Text>
           {t.status === 'in_progress' && starts.has(taskKey(t)) ? (
             <el.Box flexGrow={1} justifyContent="flex-end">
@@ -632,7 +645,8 @@ function TaskRows(props: { tasks: Task[]; starts: Map<string, number>; now: numb
             </el.Box>
           ) : undefined}
         </el.Box>
-      ))}
+        )
+      })}
       {more > 0 ? <el.Text color={C.muted}>+{more} more</el.Text> : undefined}
     </el.Box>
   )
