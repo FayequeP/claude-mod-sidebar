@@ -33,6 +33,7 @@ the prompt.
 
 | Section | What you get |
 |---|---|
+| **Tasks** | The agent's to-do list: how many are done, a progress bar, and the task it's on now. Hidden when there's no list |
 | **Context** | How full the context window is, as a bar and `85.4k / 272k` |
 | **Tokens** | Input, output, cache read, cache write and the session total |
 | **Cache** | Hit rate, and a countdown to when the prompt cache expires |

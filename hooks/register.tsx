@@ -29,6 +29,7 @@ let git: {
   tracked: number
 } | null = null
 let gitAt = 0
+let tasks: Task[] = [] // the main conversation's task list, as its task tools last left it
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 
@@ -229,6 +230,19 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Tasks: follow the main conversation's task tools. Subagents keep lists of
+  // their own (agentId set); those would muddle the plan shown here.
+  on('tool.call', async ($, e, next) => {
+    const out = await next(e)
+    if (e.agentId || !TASK_TOOLS.has(e.tool) || 'deny' in out || out.isError) return out
+    const args = e as unknown as Record<string, unknown>
+    if (e.tool === 'TodoWrite') tasks = applyTodoWrite(args.todos)
+    else if (e.tool === 'TaskCreate') tasks = applyTaskCreate(tasks, args, out.result, out.text)
+    else tasks = applyTaskUpdate(tasks, args)
+    $.ui.invalidate('ui.render')
+    return out
+  })
+
   on('turn.step', async function* ($, e, next) {
     const startedAt = await $.clock.now()
     let firstTokenAt: number | null = null
@@ -293,6 +307,13 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== 'meter') return next(e)
+    // Being drawn means it is open. An unasked open below 144 columns waits
+    // ({ isPlaced: false }) and is seated later, after session.start already
+    // recorded it closed; without this the band's "Show sidebar" lingers.
+    if (!isOpen) {
+      isOpen = true
+      $.ui.invalidate('ui.render') // drop the band's show button
+    }
     const els = (await $.ui.resolve(e)) as any // Svg exists on desktop, not terminal
     const { Box, Text } = els
 
@@ -384,6 +405,13 @@ export const register: Register = on => {
     const gap = <Box height={1} />
     return (
       <Box flexDirection="column" width="100%" minHeight={e.props.scroll?.bodyRows} paddingLeft={1} paddingRight={2} paddingTop={1}>
+        {tasks.length > 0 ? (
+          <Box flexDirection="column" width="100%" marginBottom={1}>
+            <Title label="Tasks" right={`${taskDone(tasks)}/${tasks.length}`} el={el} />
+            <Bar ratio={taskDone(tasks) / tasks.length} color={C.accent} width={barW} surface={e.surface} el={el} />
+            <TaskNow tasks={tasks} el={el} />
+          </Box>
+        ) : undefined}
         <Title label="Context" right={ctxPctText} el={el} />
         <Bar ratio={contextBarRatio} color={C.accent} width={barW} surface={e.surface} el={el} />
         <Text color={C.muted}>{contextLine} tokens</Text>
@@ -500,4 +528,59 @@ export function speed(tokens: number, firstAt: number, lastAt: number): number |
   const spanMs = lastAt - firstAt
   if (tokens <= 0 || spanMs < MIN_SPAN_MS) return null
   return round1((tokens / spanMs) * 1000)
+}
+
+// ---- Tasks ----
+// Two task tools exist: TodoWrite sends the whole list every call; TaskCreate /
+// TaskUpdate add or change one task at a time, by id.
+type TaskStatus = 'pending' | 'in_progress' | 'completed'
+type Task = { id: string; title: string; active?: string; status: TaskStatus }
+const TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
+const asStatus = (v: unknown): TaskStatus | null =>
+  v === 'pending' || v === 'in_progress' || v === 'completed' ? v : null
+const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+const taskDone = (list: Task[]) => list.filter(t => t.status === 'completed').length
+
+export function applyTodoWrite(todos: unknown): Task[] {
+  if (!Array.isArray(todos)) return []
+  return todos.flatMap((t, i) => {
+    const title = str(t?.content)
+    return title ? [{ id: String(i), title, active: str(t?.activeForm), status: asStatus(t?.status) ?? 'pending' }] : []
+  })
+}
+
+export function applyTaskCreate(list: Task[], args: Record<string, unknown>, result: unknown, text?: string): Task[] {
+  const title = str(args.subject)
+  if (!title) return list
+  // The new id comes back in the result: its record, or "Task #12 created ...".
+  const rec = (result as { task?: { id?: unknown } } | null)?.task?.id
+  const id = rec !== undefined ? String(rec) : (/#(\w+)/.exec(text ?? '')?.[1] ?? `new-${list.length}`)
+  return [...list.filter(t => t.id !== id), { id, title, active: str(args.activeForm), status: 'pending' }]
+}
+
+export function applyTaskUpdate(list: Task[], args: Record<string, unknown>): Task[] {
+  const id = str(String(args.taskId ?? ''))
+  if (!id) return list
+  if (args.status === 'deleted') return list.filter(t => t.id !== id)
+  return list.map(t =>
+    t.id !== id
+      ? t
+      : {
+          ...t,
+          status: asStatus(args.status) ?? t.status,
+          title: str(args.subject) ?? t.title,
+          active: str(args.activeForm) ?? t.active,
+        },
+  )
+}
+
+// The line under the bar: the task in progress (in its "-ing" form), else the
+// next one up, else a done note.
+function TaskNow(props: { tasks: Task[]; el: any }) {
+  const { tasks, el } = props
+  const now = tasks.find(t => t.status === 'in_progress')
+  if (now) return <el.Text wrap="truncate">▸ {now.active ?? now.title}</el.Text>
+  const next = tasks.find(t => t.status === 'pending')
+  if (next) return <el.Text color={C.muted} wrap="truncate">Next: {next.title}</el.Text>
+  return <el.Text color={C.ok}>All done</el.Text>
 }

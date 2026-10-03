@@ -1,6 +1,6 @@
 /* @jsx h */
 import { describe, expect, mock, test, tier } from 'claude-code/testing'
-import { resolveTtl, speed } from './register'
+import { applyTaskCreate, applyTaskUpdate, applyTodoWrite, resolveTtl, speed } from './register'
 
 tier('user')
 
@@ -175,5 +175,54 @@ describe('register', () => {
     expect(speed(300, 1000, 1004)).toBeNull() // one burst: no reading, not 75,000 tok/s
     expect(speed(0, 0, 5000)).toBeNull()
     expect(speed(100, 0, 500)).toBe(200)
+  })
+  test('task lists follow TodoWrite and TaskCreate/TaskUpdate', async () => {
+    const todo = applyTodoWrite([
+      { content: 'Fix speed', activeForm: 'Fixing speed', status: 'completed' },
+      { content: 'Add tasks', activeForm: 'Adding tasks', status: 'in_progress' },
+      { content: '', status: 'pending' }, // no title: dropped
+    ])
+    expect(todo.map(t => [t.title, t.status])).toEqual([['Fix speed', 'completed'], ['Add tasks', 'in_progress']])
+    expect(applyTodoWrite(undefined)).toEqual([])
+
+    let list = applyTaskCreate([], { subject: 'Write tests' }, null, 'Task #4 created successfully: Write tests')
+    list = applyTaskCreate(list, { subject: 'Ship it' }, { task: { id: 5 } })
+    expect(list.map(t => t.id)).toEqual(['4', '5'])
+    list = applyTaskUpdate(list, { taskId: '4', status: 'completed' })
+    expect(list[0]!.status).toBe('completed')
+    list = applyTaskUpdate(list, { taskId: '5', status: 'deleted' })
+    expect(list.map(t => t.id)).toEqual(['4'])
+    expect(applyTaskUpdate(list, { taskId: '99', status: 'completed' })).toEqual(list)
+  })
+
+  test('the Tasks section shows progress and the task in progress', async ($, on) => {
+    mock.clock(on)
+    mock.store(on, {})
+    on('session.usage', async () => ({ value: { context: { tokens: 0, window: 200000 }, rateLimits: [] } }))
+    on('env.get', async () => ({ value: undefined }))
+    on('session.cwd', async () => ({ value: 'C:\work' }))
+    on('ui.invalidate', async () => ({ value: undefined }))
+    on('tool.call', async () => ({ result: {}, text: 'ok', isError: false }))
+
+    const mount = () =>
+      $.ui.mount({ plugin: 'sidebar', surface: 'terminal', component: 'Pane', requestId: 'meter', props: PANE_PROPS })
+    const before = await mount()
+    expect(await before.find({ type: 'Text', text: /^Tasks$/ })).toBeUndefined() // hidden with no list
+    await before.unmount()
+
+    await $.tool.call({
+      tool: 'TodoWrite',
+      todos: [
+        { content: 'Fix speed', activeForm: 'Fixing speed', status: 'completed' },
+        { content: 'Add tasks', activeForm: 'Adding the Tasks section', status: 'in_progress' },
+        { content: 'Ship it', activeForm: 'Shipping', status: 'pending' },
+      ],
+    } as any)
+
+    const ui = await mount()
+    expect(await ui.find({ type: 'Text', text: /^Tasks$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^1\/3$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Adding the Tasks section/ })).toBeDefined()
+    await ui.unmount()
   })
 })
