@@ -61,6 +61,17 @@ hidden.
   Plugins can't own a key yet, so the sidebar's toggle button borrows that
   engine action and the chord presses it.
 
+## Resize
+
+- **Desktop app:** drag the sidebar's edge.
+- **Terminal:** click the sidebar to focus it, then press `ctrl+x ←` to widen it
+  or `ctrl+x →` to narrow it. These are Claude Code's own pane keys
+  (`pane:grow` / `pane:shrink`), so you can rebind them in
+  `~/.claude/keybindings.json`.
+
+Claude Code remembers the width you choose; it takes priority over the sidebar's
+default of 38 columns.
+
 ## How the numbers are measured
 
 <details>

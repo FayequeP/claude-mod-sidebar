@@ -15,7 +15,7 @@ const USAGE = {
 const PANE_PROPS = {
   title: 'Claude Code Sidebar',
   isFocused: false,
-  bodyColumns: 32,
+  bodyColumns: 38,
   placement: 'dock' as const,
   scroll: { offset: 0, bodyRows: 30 },
   view: {},

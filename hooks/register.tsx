@@ -19,7 +19,7 @@ let lastInvalidateAt = 0
 let tick: unknown
 let isOpen = false // ponytail: module var, a hot reload reopens the pane anyway
 
-const PANE = { id: 'meter', title: 'Claude Code Sidebar', columns: 32, rows: 3 } as const
+const PANE = { id: 'meter', title: 'Claude Code Sidebar', columns: 38, rows: 3 } as const
 let git: {
   branch: string | null
   dirty: boolean | null
