@@ -97,3 +97,7 @@ background helpers use 5 minutes by default on every plan; the countdown
 follows the main conversation only.
 
 </details>
+
+## License
+
+[MIT](LICENSE). Contributions welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
