@@ -29,6 +29,7 @@ let git: {
   tracked: number
 } | null = null
 let gitAt = 0
+let taskStarts = new Map<string, number>() // in-progress task key -> when it started
 let tasks: Task[] = [] // the main conversation's task list, as its task tools last left it
 
 const round1 = (n: number) => Math.round(n * 10) / 10
@@ -163,6 +164,17 @@ function hitRate(): number | null {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    // Newer models (Opus 5.5 and up) get no task tools unless this is set, and
+    // without them there is nothing for the Tasks section to follow. Turn them
+    // on for this process, before the session builds its tool list; a value
+    // the person set themselves (0 to keep them off) is left alone.
+    try {
+      if ((await $.env.get('CLAUDE_CODE_ENABLE_TODO_TOOLS')) === undefined) {
+        await $.env.set('CLAUDE_CODE_ENABLE_TODO_TOOLS', '1')
+      }
+    } catch {
+      // no env access: the sidebar still opens, Tasks just stays hidden
+    }
     const result = await next(e)
 
     // Rehydrate previous-session counters.
@@ -195,10 +207,15 @@ export const register: Register = on => {
       .then(r => { isOpen = r?.isPlaced !== false })
       .catch(err => $.ui.log(`sidebar: pane not opened: ${err}`))
 
-    // Tick once a second so the cache countdown moves.
+    // Redraw once a second for the cache countdown, and ~8 times a second
+    // while a task is in progress so its spinner turns.
     ;(tick as { cancel(): void } | undefined)?.cancel?.()
-    tick = $.clock.every(1000, () => {
-      $.ui.invalidate('ui.render')
+    let ticks = 0
+    tick = $.clock.every(SPIN_MS, () => {
+      ticks++
+      if (tasks.some(t => t.status === 'in_progress') || ticks % Math.round(1000 / SPIN_MS) === 0) {
+        $.ui.invalidate('ui.render')
+      }
     })
 
     return result
@@ -239,6 +256,7 @@ export const register: Register = on => {
     if (e.tool === 'TodoWrite') tasks = applyTodoWrite(args.todos)
     else if (e.tool === 'TaskCreate') tasks = applyTaskCreate(tasks, args, out.result, out.text)
     else tasks = applyTaskUpdate(tasks, args)
+    taskStarts = trackStarts(tasks, taskStarts, await $.clock.now())
     $.ui.invalidate('ui.render')
     return out
   })
@@ -409,7 +427,7 @@ export const register: Register = on => {
           <Box flexDirection="column" width="100%" marginBottom={1}>
             <Title label="Tasks" right={`${taskDone(tasks)}/${tasks.length}`} el={el} />
             <Bar ratio={taskDone(tasks) / tasks.length} color={C.accent} width={barW} surface={e.surface} el={el} />
-            <TaskNow tasks={tasks} el={el} />
+            <TaskRows tasks={tasks} starts={taskStarts} now={now} el={el} />
           </Box>
         ) : undefined}
         <Title label="Context" right={ctxPctText} el={el} />
@@ -574,13 +592,71 @@ export function applyTaskUpdate(list: Task[], args: Record<string, unknown>): Ta
   )
 }
 
-// The line under the bar: the task in progress (in its "-ing" form), else the
-// next one up, else a done note.
-function TaskNow(props: { tasks: Task[]; el: any }) {
-  const { tasks, el } = props
-  const now = tasks.find(t => t.status === 'in_progress')
-  if (now) return <el.Text wrap="truncate">▸ {now.active ?? now.title}</el.Text>
-  const next = tasks.find(t => t.status === 'pending')
-  if (next) return <el.Text color={C.muted} wrap="truncate">Next: {next.title}</el.Text>
-  return <el.Text color={C.ok}>All done</el.Text>
+// Every task, one row each, in the order Claude made them: ✓ done (dimmed),
+// ▸ in progress (accent, in its "-ing" form), ○ not started. The task tools
+// have no "failed" state, so none is shown. Past MAX_TASK_ROWS the rest fold
+// into "+N more", keeping the in-progress row in view.
+const MAX_TASK_ROWS = 8
+const TASK_MARK = { completed: '✓', in_progress: '▸', pending: '○' } as const
+
+export function visibleTasks(list: Task[], max = MAX_TASK_ROWS): { rows: Task[]; more: number } {
+  if (list.length <= max) return { rows: list, more: 0 }
+  // Start the window just before the task in progress (or the first not done).
+  const focus = list.findIndex(t => t.status === 'in_progress')
+  const pivot = focus >= 0 ? focus : Math.max(0, list.findIndex(t => t.status !== 'completed'))
+  const start = Math.min(Math.max(0, pivot - 2), list.length - (max - 1))
+  const rows = list.slice(start, start + max - 1)
+  return { rows, more: list.length - rows.length }
+}
+
+function TaskRows(props: { tasks: Task[]; starts: Map<string, number>; now: number; el: any }) {
+  const { tasks, starts, now, el } = props
+  const { rows, more } = visibleTasks(tasks)
+  return (
+    <el.Box flexDirection="column" width="100%">
+      {rows.map(t => (
+        <el.Box key={`task-${t.id}`} flexDirection="row" width="100%">
+          <el.Text color={t.status === 'completed' ? C.ok : t.status === 'in_progress' ? C.accent : C.muted}>
+            {t.status === 'in_progress' ? spinnerFrame(now) : TASK_MARK[t.status]}{' '}
+          </el.Text>
+          <el.Text
+            wrap="truncate"
+            bold={t.status === 'in_progress'}
+            color={t.status === 'in_progress' ? undefined : C.muted}
+          >
+            {t.status === 'in_progress' ? (t.active ?? t.title) : t.title}
+          </el.Text>
+          {t.status === 'in_progress' && starts.has(taskKey(t)) ? (
+            <el.Box flexGrow={1} justifyContent="flex-end">
+              <el.Text color={C.muted}> {formatElapsed(now - starts.get(taskKey(t))!)}</el.Text>
+            </el.Box>
+          ) : undefined}
+        </el.Box>
+      ))}
+      {more > 0 ? <el.Text color={C.muted}>+{more} more</el.Text> : undefined}
+    </el.Box>
+  )
+}
+
+// ---- In-progress animation ----
+const SPIN_MS = 125
+const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+// 0:42, 12:05, 1:02:09
+export function formatElapsed(ms: number): string {
+  const t = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
+  const s = String(t % 60).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
+}
+export const spinnerFrame = (now: number) => SPINNER[Math.floor(now / SPIN_MS) % SPINNER.length]!
+// TodoWrite ids are list positions, so the title is part of the key.
+const taskKey = (t: Task) => `${t.id}:${t.title}`
+
+// When each in-progress task started: kept while it stays in progress,
+// stamped `now` when it first appears so, dropped once it leaves.
+export function trackStarts(list: Task[], prev: Map<string, number>, now: number): Map<string, number> {
+  const next = new Map<string, number>()
+  for (const t of list) if (t.status === 'in_progress') next.set(taskKey(t), prev.get(taskKey(t)) ?? now)
+  return next
 }

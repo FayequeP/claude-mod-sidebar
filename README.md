@@ -33,12 +33,20 @@ the prompt.
 
 | Section | What you get |
 |---|---|
-| **Tasks** | The agent's to-do list: how many are done, a progress bar, and the task it's on now. Hidden when there's no list |
+| **Tasks** | The agent's to-do list: a progress bar and every task, marked ✓ done, ▸ in progress or ○ not started. Hidden when there's no list |
 | **Context** | How full the context window is, as a bar and `85.4k / 272k` |
 | **Tokens** | Input, output, cache read, cache write and the session total |
 | **Cache** | Hit rate, and a countdown to when the prompt cache expires |
 | **Speed** | Time to first token and output speed in tokens per second |
 | **Workspace** | Folder, git branch, clean or changed, lines added and removed |
+
+**About Tasks:** Claude Code turns its task tools off by default for newer
+models such as Opus 5.5, and without them Claude writes its plan as plain text
+the sidebar can't follow. The sidebar switches them back on for its own sessions
+(`CLAUDE_CODE_ENABLE_TODO_TOOLS=1`). If you'd rather keep them off, set
+`"CLAUDE_CODE_ENABLE_TODO_TOOLS": "0"` in the `env` block of
+`~/.claude/settings.json`; the sidebar leaves your choice alone and Tasks stays
+hidden.
 
 ## Show and hide
 

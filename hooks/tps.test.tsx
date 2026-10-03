@@ -1,6 +1,6 @@
 /* @jsx h */
 import { describe, expect, mock, test, tier } from 'claude-code/testing'
-import { applyTaskCreate, applyTaskUpdate, applyTodoWrite, resolveTtl, speed } from './register'
+import { applyTaskCreate, applyTaskUpdate, applyTodoWrite, resolveTtl, speed, formatElapsed, spinnerFrame, trackStarts, visibleTasks } from './register'
 
 tier('user')
 
@@ -223,6 +223,54 @@ describe('register', () => {
     expect(await ui.find({ type: 'Text', text: /^Tasks$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^1\/3$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Adding the Tasks section/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Fix speed$/ })).toBeDefined() // done rows stay listed
+    expect(await ui.find({ type: 'Text', text: /^Ship it$/ })).toBeDefined() // and so do pending ones
+    for (const mark of [/^✓ $/, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] $/, /^○ $/]) expect(await ui.find({ type: 'Text', text: mark })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^ 0:00$/ })).toBeDefined() // elapsed time on the running task
     await ui.unmount()
+  })
+  test('session start turns the task tools on unless the person chose', async ($, on) => {
+    mock.clock(on)
+    mock.store(on, {})
+    on('ui.open', async () => ({ value: { isPlaced: true } }))
+    on('ui.log', async () => ({ value: undefined }))
+    on('command.register', async () => ({ value: undefined }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    let preset: string | undefined
+    const sets: [string, string | undefined][] = []
+    on('env.get', async ($, e) => ({ value: e.name === 'CLAUDE_CODE_ENABLE_TODO_TOOLS' ? preset : undefined }))
+    on('env.set', async ($, e) => (sets.push([e.name, e.value]), { value: undefined }))
+
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: 'C:\work' })
+    expect(sets).toEqual([['CLAUDE_CODE_ENABLE_TODO_TOOLS', '1']])
+
+    sets.length = 0
+    preset = '0' // the person turned them off: respected
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: 'C:\work' })
+    expect(sets).toEqual([])
+  })
+  test('long task lists fold but keep the task in progress in view', async () => {
+    const mk = (n: number, active: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: String(i),
+        title: `t${i}`,
+        status: (i < active ? 'completed' : i === active ? 'in_progress' : 'pending') as any,
+      }))
+    expect(visibleTasks(mk(5, 2))).toEqual({ rows: mk(5, 2), more: 0 }) // short: all shown
+    const { rows, more } = visibleTasks(mk(20, 12))
+    expect(rows.length + more).toBe(20)
+    expect(rows.length).toBe(7) // 7 rows + the "+N more" line = 8
+    expect(rows.some(t => t.status === 'in_progress')).toBe(true)
+    expect(visibleTasks(mk(20, 19)).rows.at(-1)!.title).toBe('t19') // near the end: window ends at the last
+  })
+  test('running tasks keep their start time; the spinner turns', async () => {
+    const run = (id: string, status: any) => ({ id, title: id, status })
+    let starts = trackStarts([run('a', 'in_progress')], new Map(), 1000)
+    starts = trackStarts([run('a', 'in_progress'), run('b', 'pending')], starts, 5000)
+    expect([...starts]).toEqual([['a:a', 1000]]) // still running: original start kept
+    starts = trackStarts([run('a', 'completed'), run('b', 'in_progress')], starts, 9000)
+    expect([...starts]).toEqual([['b:b', 9000]]) // finished dropped, new one stamped
+    expect(spinnerFrame(0)).not.toBe(spinnerFrame(125))
+    expect([formatElapsed(0), formatElapsed(42_000), formatElapsed(3_729_000)]).toEqual(['0:00', '0:42', '1:02:09'])
   })
 })
